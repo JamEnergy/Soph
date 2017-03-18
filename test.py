@@ -1,8 +1,7 @@
 import discord
-import soph
 import importlib
 client = discord.Client()
-my_soph = soph.Soph()
+import soph
 tok = open("token.dat").read()
 
 @client.event
@@ -11,6 +10,13 @@ async def on_ready():
     print(client.user.name)
     print(client.user.id)
     print('------')
+
+    channels = client.get_all_channels()
+    soph.setClient(client)
+    for channel in channels:
+        if channel.type == discord.ChannelType.text:
+            if channel.name in ["ch160", "numanuma", "potatogallery", "gamelounge", "lisasworkshop", "norisworkshop", "rant"]:
+                await soph.dumpChannel(channel, "160_test_3")
 
 @client.event
 async def on_message(message):
@@ -25,18 +31,5 @@ async def on_message(message):
     elif message.content.startswith('!sleep'):
         await asyncio.sleep(5)
         await client.send_message(message.channel, 'Done sleeping')
-    else:
-        try:
-            global my_soph
-            if soph.reload(soph, "soph.py"):
-                my_soph = soph.Soph(my_soph.corpus)
-
-            my_soph.setClient(client)
-            response = await my_soph.consume(message)
-            if response:
-                await client.send_message(message.channel, response)
-        except Exception as e:
-            print (e)
 
 client.run(tok)
-
