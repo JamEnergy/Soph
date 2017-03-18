@@ -1,9 +1,12 @@
 import discord
 import soph
 import importlib
+import asyncio
+
 client = discord.Client()
 my_soph = soph.Soph()
 tok = open("token.dat").read()
+
 
 @client.event
 async def on_ready():
@@ -11,6 +14,7 @@ async def on_ready():
     print(client.user.name)
     print(client.user.id)
     print('------')
+
 
 @client.event
 async def on_message(message):
@@ -36,7 +40,7 @@ async def on_message(message):
             if response:
                 await client.send_message(message.channel, response)
         except Exception as e:
-            print (e)
+            print(e)
+
 
 client.run(tok)
-
