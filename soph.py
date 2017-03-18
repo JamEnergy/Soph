@@ -7,40 +7,6 @@ import discord
 import time
 import asyncio
 
-async def dump(message):
-    path = message.author.display_name + ".txt"
-    if not os.path.exists(path):
-        with open(path, "w") as of:
-            async for log in client.logs_from(message.channel, limit=100):
-                of.write(log.content)
-                of.write("\n")
-#   if not os.path.exists("jer.txt"):
-async def dumpChannel(channel, dir):
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
-    fileHandles = {}
-    authors = {}
-    if os.path.exists("authors"):
-        with open("authors") as f:
-            authors = json.loads(f.read())
-    i = 0
-    lim = 1000000
-    async for log in client.logs_from(channel, limit=lim):
-        i = i+1
-        if (i%500) == 0:
-            with open("log.log", "w") as of:
-                of.write ("{0}%".format(i/lim * 100))
-        author = log.author.id
-        if not author in fileHandles:
-            authors[log.author.id] = log.author.display_name
-            fileHandles[author] = open(os.path.join(dir, author), "ab")
-            with open ("authors", "w") as of:
-                of.write(json.dumps(authors, indent=4))
-
-        fh = fileHandles[author]
-        fh.write(log.content.encode("utf-8"))
-        fh.write("\n".encode("utf-8"))
-
 g_now = time.time()
 g_modTimes = {}
 def reload(module, filepath):

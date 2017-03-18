@@ -4,12 +4,8 @@ import sys
 import markovify
 import shutil
 
-
-sourceDir = "160_test_3"
-destDir = "corpus"
-
-MyText("thank you thank you :)", state_size=2)
-
+sourceDir = "160_test_3" # lines dumped from discord dump
+destDir = "corpus" # destination for markov data
 
 if not os.path.isdir(destDir):
     os.mkdir(destDir)
