@@ -6,6 +6,7 @@ import importlib
 import discord
 import time
 import asyncio
+import index
 
 g_now = time.time()
 g_modTimes = {}
@@ -28,9 +29,16 @@ g_Lann = '<:lann:275432680533917697>'
 class Soph:
     addressPat = re.compile(r"^Ok((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
 
+    def makeQuery(self, text):
+        text = text.strip()
+        if text[-1] == '?':
+            text = text[0:-1]
+        return text
+
     def __init__(self, corpus = None):
         self.client = None
         self.corpus = corpus
+        self.index = None
 
     def setClient(self, _client):
         self.client = _client 
@@ -51,6 +59,19 @@ class Soph:
                 return None
             if message.channel.name == "ch160":
                 return None
+
+        if payload.startswith("who talks about"):
+            reloaded = reload(index, "index.py")
+            if reloaded or not self.index:
+                self.index = index.Index("index")
+            userIds = json.loads(open("authors").read())
+            self.index.setUsers(userIds)
+            query = payload[len("who talks about"):]
+            query = self.makeQuery(query)
+            results = self.index.queryStats(query)
+            if len(results) > 10:
+                results = results[:10]
+            return "\n".join(["{0}: {1}".format(v[1], v[0]) for v in results])
 
         if payload.startswith("impersonate "):
             reloaded = reload(markov, "markov.py")
