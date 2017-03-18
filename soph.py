@@ -5,7 +5,7 @@ import markov
 import importlib
 import discord
 import time
-
+import asyncio
 
 async def dump(message):
     path = message.author.display_name + ".txt"
@@ -57,6 +57,7 @@ def reload(module, filepath):
          return True
 
     return False
+
 g_Lann = '<:lann:275432680533917697>'
 class Soph:
     addressPat = re.compile(r"^Ok((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
@@ -75,6 +76,9 @@ class Soph:
             return None
 
         payload = re.sub(Soph.addressPat, "", message.content)
+        server = None
+        if message.channel:
+            server = message.channel.server
         
         if message.channel.type != discord.ChannelType.private:
             if len(payload) == len(message.content):
@@ -97,10 +101,24 @@ class Soph:
             try:
                 lines = self.corpus.impersonate(names, 1)
                 if lines:
-                    return lines[0]
+                    reply = await self.stripMentions(lines[0], server)
+                    return reply
                 return "Hmm... I couldn't think of anything to say {0}".format(g_Lann)
             except:
                 return g_Lann
 
         
-        return "I was addressed, and {0} said \"{1}\"".format(fromUser,payload)
+        reply = await self.stripMentions(payload, server)
+        return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
+
+    async def stripMentions(self, text, server = None):
+        matches = re.search("<@!*(\d+)>", text)
+        if matches:
+            for m in matches.groups():
+                if server:
+                    info = discord.utils.find(lambda x: x.id == m, server.members)
+                else:
+                    info = await self.client.get_user_info(m)
+                
+                text = re.sub("<@!*"+m+">", "@"+info.display_name, text)
+        return text
