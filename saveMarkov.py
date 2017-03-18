@@ -3,9 +3,10 @@ import os
 import sys
 import markovify
 import shutil
+import markov 
 
-sourceDir = "160_test_3" # lines dumped from discord dump
-destDir = "corpus" # destination for markov data
+sourceDir = "some_test" # lines dumped from discord dump
+destDir = "corpus_tmp" # destination for markov data
 
 if not os.path.isdir(destDir):
     os.mkdir(destDir)
@@ -25,7 +26,7 @@ for file in os.listdir(sourceDir):
                     text2 += line
                     text2 += "."
             
-            chain = MyText(text2, state_size=2)
+            chain = markov.Text(text2, state_size=2)
 
             with open(os.path.join(destDir, file), "w") as of:
                 of.write(chain.to_json())
