@@ -60,6 +60,10 @@ class Soph:
             if message.channel.name == "ch160":
                 return None
 
+
+        if not payload:
+            return "What?"
+
         if payload.startswith("who talks about"):
             reloaded = reload(index, "index.py")
             if reloaded or not self.index:
@@ -71,6 +75,24 @@ class Soph:
             results = self.index.queryStats(query)
             if len(results) > 10:
                 results = results[:10]
+            if not results:
+                return "No one, apparently, {0}".format(fromUser)
+            return "\n".join(["{0}: {1}".format(v[1], v[0]) for v in results])
+
+        if payload.startswith("who mentions"):
+            reloaded = reload(index, "index.py")
+            if reloaded or not self.index:
+                self.index = index.Index("index")
+            userIds = json.loads(open("authors").read())
+            query = payload[len("who mentions"):]
+            for k, v in userIds.items():
+                query = query.replace(v, k)
+            query = self.makeQuery(query)
+            results = self.index.queryStats(query)
+            if len(results) > 10:
+                results = results[:10]
+            if not results:
+                return "No one, apparently, {0}".format(fromUser)
             return "\n".join(["{0}: {1}".format(v[1], v[0]) for v in results])
 
         if payload.startswith("impersonate "):
@@ -94,7 +116,7 @@ class Soph:
 
         if fromUser == "fLux":
             return "Lux, pls. :sweat_drops:"
-
+            
         reply = await self.stripMentions(payload, server)
         return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 

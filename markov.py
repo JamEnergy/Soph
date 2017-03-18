@@ -133,7 +133,11 @@ class Corpus:
             model = self.getCombinedModel(names)
 
         ret = []
+        tries = 0
         while len(ret) < count:
+            tries = tries+1
+            if tries > 2 * count:
+                break
             sen = model.make_short_sentence(300)
             if sen:
                 #sen = Corpus.correctSentence(sen)
@@ -142,8 +146,11 @@ class Corpus:
     def inventConversation(self, names, count=10):
             models = [self.models[self.authors[name]] for name in names]
             ret = []
-            
+            tries = 0
             while len(ret) < count:
+                tries = tries+1
+                if tries > 2 * count:
+                    break
                 i = random.randint(0,len(models)-1)
                 s = models[i].make_short_sentence(140)
                 if s:
