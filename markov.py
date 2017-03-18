@@ -3,6 +3,8 @@ import json
 import random
 import os
 import re
+from collections import OrderedDict
+
 class Text(markovify.Text):
     def __init__(self, input_text, state_size=2, chain=None):
         """
