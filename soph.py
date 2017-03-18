@@ -7,6 +7,7 @@ import discord
 import time
 import asyncio
 
+
 async def dump(message):
     path = message.author.display_name + ".txt"
     if not os.path.exists(path):
@@ -14,7 +15,9 @@ async def dump(message):
             async for log in client.logs_from(message.channel, limit=100):
                 of.write(log.content)
                 of.write("\n")
-#   if not os.path.exists("jer.txt"):
+
+
+# if not os.path.exists("jer.txt"):
 async def dumpChannel(channel, dir):
     if not os.path.isdir(dir):
         os.mkdir(dir)
@@ -26,23 +29,26 @@ async def dumpChannel(channel, dir):
     i = 0
     lim = 1000000
     async for log in client.logs_from(channel, limit=lim):
-        i = i+1
-        if (i%500) == 0:
+        i = i + 1
+        if (i % 500) == 0:
             with open("log.log", "w") as of:
-                of.write ("{0}%".format(i/lim * 100))
+                of.write("{0}%".format(i / lim * 100))
         author = log.author.id
         if not author in fileHandles:
             authors[log.author.id] = log.author.display_name
             fileHandles[author] = open(os.path.join(dir, author), "ab")
-            with open ("authors", "w") as of:
+            with open("authors", "w") as of:
                 of.write(json.dumps(authors, indent=4))
 
         fh = fileHandles[author]
         fh.write(log.content.encode("utf-8"))
         fh.write("\n".encode("utf-8"))
 
+
 g_now = time.time()
 g_modTimes = {}
+
+
 def reload(module, filepath):
     """ reload module based on modified time of filepath"""
     global g_modTimes
@@ -50,28 +56,31 @@ def reload(module, filepath):
     if not filepath in g_modTimes:
         g_modTimes[filepath] = g_now
 
-    modTime = os.path.getmtime(filepath) 
+    modTime = os.path.getmtime(filepath)
     if modTime > g_modTimes[filepath]:
-         g_modTimes[filepath] = modTime
-         importlib.reload(module)
-         return True
+        g_modTimes[filepath] = modTime
+        importlib.reload(module)
+        return True
 
     return False
 
+
 g_Lann = '<:lann:275432680533917697>'
+
+
 class Soph:
     addressPat = re.compile(r"^Ok((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
 
-    def __init__(self, corpus = None):
+    def __init__(self, corpus=None):
         self.client = None
         self.corpus = corpus
 
     def setClient(self, _client):
-        self.client = _client 
+        self.client = _client
 
     async def consume(self, message):
         fromUser = message.author.display_name
-        
+
         if fromUser == "Soph":
             return None
 
@@ -79,7 +88,7 @@ class Soph:
         server = None
         if message.channel:
             server = message.channel.server
-        
+
         if message.channel.type != discord.ChannelType.private:
             if len(payload) == len(message.content):
                 return None
@@ -92,9 +101,9 @@ class Soph:
         if payload.startswith("impersonate "):
             reloaded = reload(markov, "markov.py")
             if reloaded or not self.corpus:
-                print ("Loading corpus")
+                print("Loading corpus")
                 self.corpus = markov.Corpus("./corpus")
-                print ("Loaded corpus")
+                print("Loaded corpus")
             payload = re.sub("impersonate", "", payload)
             names = re.split(",", payload.strip())
             names = [name.strip() for name in names]
@@ -107,11 +116,10 @@ class Soph:
             except:
                 return g_Lann
 
-        
         reply = await self.stripMentions(payload, server)
         return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
-    async def stripMentions(self, text, server = None):
+    async def stripMentions(self, text, server=None):
         matches = re.search("<@!*(\d+)>", text)
         if matches:
             for m in matches.groups():
@@ -119,6 +127,6 @@ class Soph:
                     info = discord.utils.find(lambda x: x.id == m, server.members)
                 else:
                     info = await self.client.get_user_info(m)
-                
-                text = re.sub("<@!*"+m+">", "@"+info.display_name, text)
+
+                text = re.sub("<@!*" + m + ">", "@" + info.display_name, text)
         return text
