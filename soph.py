@@ -43,7 +43,7 @@ class Soph:
 
         payload = re.sub(Soph.addressPat, "", message.content)
         server = None
-        if message.channel:
+        if message.channel and hasattr(message.channel ,'server'):
             server = message.channel.server
         
         if message.channel.type != discord.ChannelType.private:
@@ -52,14 +52,11 @@ class Soph:
             if message.channel.name == "ch160":
                 return None
 
-        if fromUser == "fLux":
-            return "Lux, pls. :sweat_drops:"
-
         if payload.startswith("impersonate "):
             reloaded = reload(markov, "markov.py")
             if reloaded or not self.corpus:
                 print ("Loading corpus")
-                self.corpus = markov.Corpus("./corpus")
+                self.corpus = markov.Corpus("./corpus_3")
                 print ("Loaded corpus")
             payload = re.sub("impersonate", "", payload)
             names = re.split(",", payload.strip())
@@ -70,21 +67,24 @@ class Soph:
                     reply = await self.stripMentions(lines[0], server)
                     return reply
                 return "Hmm... I couldn't think of anything to say {0}".format(g_Lann)
-            except:
+            except Exception as e:
+                print (e)
                 return g_Lann
 
-        
+        if fromUser == "fLux":
+            return "Lux, pls. :sweat_drops:"
+
         reply = await self.stripMentions(payload, server)
         return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
     async def stripMentions(self, text, server = None):
-        matches = re.search("<@!*(\d+)>", text)
+        matches = re.search("<@[!&]*(\d+)>", text)
         if matches:
             for m in matches.groups():
                 if server:
-                    info = discord.utils.find(lambda x: x.id == m, server.members)
+                    info = discord.utils.find(lambda x: x.id == m, server.members) or discord.utils.find(lambda x: x.id == m, server.roles)
                 else:
                     info = await self.client.get_user_info(m)
-                
-                text = re.sub("<@!*"+m+">", "@"+info.display_name, text)
+                name = getattr(info, "display_name", getattr(info, "name", g_Lann))
+                text = re.sub("<@[!&]*"+m+">", "@"+name, text)
         return text

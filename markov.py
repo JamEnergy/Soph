@@ -3,9 +3,12 @@ import json
 import random
 import os
 import re
-from collections import OrderedDict
+
+from utils import MRU
 
 class Text(markovify.Text):
+    sentenceEndPat = re.compile(r"[.?!]$")
+
     def __init__(self, input_text, state_size=2, chain=None):
         """
         input_text: A string.
@@ -59,6 +62,7 @@ class Text(markovify.Text):
 
 class Corpus:
     def __init__(self, dir, filter=[]):
+        self.comboCache = MRU(3)
         authorsPath = os.path.join(dir, "authors")
         with open(authorsPath) as f:
             self.authorIds = json.loads(f.read())
@@ -78,6 +82,25 @@ class Corpus:
                     self.models[file] = Text.from_json(contents)
                 except:
                     print ("Failed on {0}".format(file))
+
+    def sentence_join(self, sentences):
+        """
+        Re-joins a list of sentences into the full text.
+        """
+        ret = ""
+        for s in sentences:
+            s = s.strip()
+            terminated = sentenceEndPat.match(s[-1])
+            if not terminated:
+                s = s + "."
+            if ret:
+                ret += " "
+
+            if self.correctCapitalization:
+                s = self.correctSentence(s)
+            ret += s
+        return ret
+
     def correctSentence(text):
         letter = re.compile(r"\w")
         upper = True
@@ -93,18 +116,28 @@ class Corpus:
         ret = re.sub(r"\bi\b", "I", ret)
         return ret
 
-    def impersonate(self, names, count=10):
-        models = [self.models[self.authors[name]] for name in names]
-
-        if len(models) == 1:
-            model = models[0]
-        else:
+    def getCombinedModel(self, names):
+        key = "+".join(set(names))
+        model = self.comboCache.get(key)
+        if not model:
+            models = [self.models[self.authors[name]] for name in names]
             model = markovify.combine(models, [1]*len(models))
+            self.comboCache.insert(key, model)
+        return model
+
+    def impersonate(self, names, count=10):
+
+        if len(names) == 1:
+            model = self.models[self.authors[names[0]]]
+        else:
+            model = self.getCombinedModel(names)
+
         ret = []
         while len(ret) < count:
-            sen = model.make_short_sentence(140)
+            sen = model.make_short_sentence(300)
             if sen:
-                ret.append(Corpus.correctSentence(sen))
+                #sen = Corpus.correctSentence(sen)
+                ret.append(sen)
         return ret 
     def inventConversation(self, names, count=10):
             models = [self.models[self.authors[name]] for name in names]
@@ -114,7 +147,7 @@ class Corpus:
                 i = random.randint(0,len(models)-1)
                 s = models[i].make_short_sentence(140)
                 if s:
-                    s = Corpus.correctSentence(s)
+                    #s = Corpus.correctSentence(s)
                     ret.append( "{0}: {1}".format(names[i], s))
             return ret
 

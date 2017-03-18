@@ -5,21 +5,23 @@ import markovify
 import shutil
 import markov 
 
-sourceDir = "some_test" # lines dumped from discord dump
-destDir = "corpus_tmp" # destination for markov data
+sourceDir = "160_test_3" # lines dumped from discord dump
+destDir = "corpus_3" # destination for markov data
 
 if not os.path.isdir(destDir):
     os.mkdir(destDir)
-
+skip = re.compile(r"^\[\d+:\d+ [aApP][mM]\]")
 for file in os.listdir(sourceDir):
     try:
         path = os.path.join(sourceDir, file)
         with open(path, "rb") as f:
             bytestext = f.read()
-            text = bytestext.decode("utf-8").lower()
+            text = bytestext.decode("utf-8")
             text2 = ""
             for line in text.splitlines():
                 line = line.strip() 
+                if skip.match(line):
+                    continue
                 if line:
                     if text2:
                         text2 += " "

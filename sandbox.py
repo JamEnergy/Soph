@@ -1,21 +1,18 @@
-from collections import OrderedDict
 
-class MRU:
-    def __init__(self, size):
-        self.map = OrderedDict()
-        self.size = size
 
-    def insert(self, k,v):
-        if len(self.map) > self.size:
-            self.map.popitem()
-        self.map[k] = v
+m = MRU(3)
 
-    def get(self, k):
-        if k in self.map:
-            self.map.move_to_end(k)
-            return self.map[k]
-        return None
+for i in range(0,5):
+    m.insert(1+i,(1+i)*10)
 
-m = Mru(1)
 
-m.get(1)
+for i in range(0,5):
+    print (m.get(1+i))
+
+m.insert(2, 20)
+m.insert(5, 50)
+
+m.insert(1, 10)
+m.insert(1, 10)
+
+pass
