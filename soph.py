@@ -7,6 +7,7 @@ import discord
 import time
 import asyncio
 import index
+import subject
 
 g_now = time.time()
 g_modTimes = {}
@@ -25,12 +26,34 @@ def reload(module, filepath):
 
     return False
 
-def startsWithCheck(prefix):
-    def checker(text):
-        if text.startswith(prefix):
-            return len(prefix)
+class StartsWithChecker:
+    def __init__(self, prefix):
+        self.prefix = prefix
+
+    def __call__(self, text):
+        if text.startswith(self.prefix):
+            return len(self.prefix)
         return -1
-    return checker
+
+    def help(self):
+        return "{0} <text>".format(self.prefix)
+
+class PrefixNameSuffixChecker:
+    def __init__(self, prefix, suffix):
+        self.prefix = prefix
+        self.suffix = suffix
+        patString = "^\\s*{0} (.*) {1}".format(prefix, suffix)
+        self.pat = re.compile(patString)
+
+    def __call__(self, text):
+        match = g_whatSaidPat.finditer(text)
+        for m in match:
+            off = m.start(1)
+            return off
+        return -1
+
+    def help(self):
+        return "{0} <name> {1} <text>".format(self.prefix, self.suffix)
 
 g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
 def whatDidTheySayCheck(text):
@@ -58,11 +81,19 @@ class Soph:
         self.lastReply = 0
         self.lastFrom = ""
         # callback checkers should return -1 for "not this action" or offset of payload
-        self.callbacks = [(startsWithCheck("who talks about"), Soph.respondQueryStats),
-                            (startsWithCheck("who mentions"), Soph.respondMentions),
-                            (startsWithCheck("impersonate"), Soph.respondImpersonate),
-                            (startsWithCheck("who said"), Soph.respondWhoSaid),
-                            (whatDidTheySayCheck, Soph.respondUserSaidWhat)] 
+        self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
+                            (StartsWithChecker("who mentions"), Soph.respondMentions),
+                            (StartsWithChecker("impersonate"), Soph.respondImpersonate),
+                            (StartsWithChecker("who said"), Soph.respondWhoSaid),
+                            (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
+                            (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),                            
+                            (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
+                            (StartsWithChecker("help"), Soph.help)] 
+
+    async def help(self, prefix, suffix, message):
+        ret = "I can parse requests of the following forms:\n"
+        ret += "\n".join([c[0].help() for c in self.callbacks])
+        return ret
 
     async def dispatch(self, payload, message):
         for c in self.callbacks:
@@ -83,6 +114,23 @@ class Soph:
         """ return a map of userId -> userName """
         userIds = json.loads(open("authors").read())
         return userIds
+
+    async def whatDoWeThinkOf(self, prefix, suffix, message):
+        self.reloadIndex()
+        userIds = self.loadUsers()
+        self.index.setUsers(userIds)
+        # TODO: Strip mentions
+
+        query = suffix
+        query = self.makeQuery(query)
+        results = self.index.queryLong(query, max=300)
+
+        reload(subject, "subject.py")
+        results = subject.filter(results, query.split(" ")[0]) or subject.filter(results, query.split(" ")[-1])
+        if len(results) > 5:
+            results = results[:5]
+        return "We think...\n" + "\n".join( ["{0}: {1}".format(userIds[r[0]], r[1]) for r in results ] )
+        
 
     async def respondQueryStats(self, prefix, suffix, message):
         fromUser = message.author.display_name
@@ -200,6 +248,7 @@ class Soph:
         server = None
         if message.channel and hasattr(message.channel ,'server'):
             server = message.channel.server
+
         
         if message.channel.type != discord.ChannelType.private:
             if len(payload) == len(message.content):
