@@ -46,18 +46,18 @@ class Index:
             sc = reversed(sorted(counts))
             return [v for v in sc]
 
-    def queryLong(self, text, max = 3, user = None):
+    def queryLong(self, text, max = 3, user = None, expand=False):
         for attempt in range(0,3):
-            results = self.query(text, max*(1+attempt), user)
+            results = self.query(text, max*(1+attempt), user, expand=(expand or (attempt > 0)))
             ret = list(results)
 
-            exists = set()
+            exists = set([text.lower()])
 
             i = len(ret) - 1
             while i >= 0:
                 r = ret[i]
-                if not r[1] in exists:
-                    exists.add(r[1])
+                if not r[1].lower() in exists:
+                    exists.add(r[1].lower())
                 else:
                     del ret[i]
                 i = i - 1
@@ -68,10 +68,13 @@ class Index:
 
         return ret
 
-    def query(self, text, max = 3, user = None):
+    def query(self, text, max = 3, user = None, expand=False):
         with self.ix.searcher(weighting = whoosh.scoring.TF_IDF) as searcher:
             from whoosh.qparser import QueryParser
-            qp = QueryParser("content", schema=self.ix.schema)
+            if expand:
+                qp = QueryParser("content", schema=self.ix.schema, termclass=whoosh.query.Variations)
+            else:
+                qp = QueryParser("content", schema=self.ix.schema)
             if user:
                 textNode = qp.parse(text)
                 textNode.fieldname = "content"

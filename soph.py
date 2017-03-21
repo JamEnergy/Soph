@@ -117,19 +117,23 @@ class Soph:
 
     async def whatDoWeThinkOf(self, prefix, suffix, message):
         self.reloadIndex()
+        reload(subject, "subject.py")
         userIds = self.loadUsers()
         self.index.setUsers(userIds)
         # TODO: Strip mentions
 
+        ret = ""
+
         query = suffix
         query = self.makeQuery(query)
-        results = self.index.queryLong(query, max=300)
 
-        reload(subject, "subject.py")
+        results = self.index.queryLong(query, max=300)
         results = subject.filter(results, query.split(" ")[0]) or subject.filter(results, query.split(" ")[-1])
         if len(results) > 5:
             results = results[:5]
-        return "We think...\n" + "\n".join( ["{0}: {1}".format(userIds[r[0]], r[1]) for r in results ] )
+        ret +=  "We think...\n" + "\n".join( ["{0}: {1}".format(userIds[r[0]], r[1]) for r in results ] )
+
+        return ret
         
 
     async def respondQueryStats(self, prefix, suffix, message):
@@ -189,7 +193,10 @@ class Soph:
                     return "I can't tell you that."
                 return "I don't know who {0} is {1}".format(name, g_Lann)
             payload = self.makeQuery(suffix[m.end(0):])
-            results = self.index.queryLong(payload, user = user)
+
+            ret = ""
+
+            results = self.index.queryLong(payload, user = user, max= 5)
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)
@@ -198,7 +205,9 @@ class Soph:
                     if server:
                         text =  await self.stripMentions(text, server)
                     resp += "{0}) {1}\n".format(i+1, text)
-                return resp
+                ret += resp
+            if ret:
+                return ret
         return "Nothing, apparently, {0}".format(fromUser)
 
     async def respondImpersonate(self, prefix, suffix, message):
