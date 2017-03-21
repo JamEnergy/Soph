@@ -46,7 +46,29 @@ class Index:
             sc = reversed(sorted(counts))
             return [v for v in sc]
 
-    def query(self, text, user = None):
+    def queryLong(self, text, max = 3, user = None):
+        for attempt in range(0,3):
+            results = self.query(text, max*(1+attempt), user)
+            ret = list(results)
+
+            exists = set()
+
+            i = len(ret) - 1
+            while i >= 0:
+                r = ret[i]
+                if not r[1] in exists:
+                    exists.add(r[1])
+                else:
+                    del ret[i]
+                i = i - 1
+
+            if len(ret) >= max:
+                ret = ret[:max]
+                break
+
+        return ret
+
+    def query(self, text, max = 3, user = None):
         with self.ix.searcher(weighting = whoosh.scoring.TF_IDF) as searcher:
             from whoosh.qparser import QueryParser
             qp = QueryParser("content", schema=self.ix.schema)
@@ -60,27 +82,6 @@ class Index:
             else:
                 q = qp.parse(text)
             
+            results = searcher.search(q, limit=max)
 
-            for i in range(0,3):
-                results = searcher.search(q, limit=8 * (i+1))
-                ret = [(r["user"], r["content"]) for r in results]
-
-                exists = set()
-
-                i = len(ret) - 1
-                while i >= 0:
-                    r = ret[i]
-                    if not r[1] in exists:
-                        exists.add(r[1])
-                    else:
-                        del ret[i]
-                    i = i - 1
-
-                #def cmp(x):
-                #    return len(x[1])
-
-                if len(ret) >= 3:
-                    ret = ret[:3]
-                    break
-
-            return ret
+            return [(r["user"], r["content"]) for r in results]

@@ -121,7 +121,7 @@ class Soph:
         userIds = self.loadUsers()
         query = suffix
         query = self.makeQuery(query)
-        results = self.index.query(query)
+        results = self.index.queryLong(query)
         if not results:
             return "Apparently no one, {0}".format(fromUser)
         return "\n".join(["{0}: {1}".format(userIds[r[0]], r[1]) for r in results])
@@ -141,7 +141,7 @@ class Soph:
                     return "I can't tell you that."
                 return "I don't know who {0} is {1}".format(name, g_Lann)
             payload = self.makeQuery(suffix[m.end(0):])
-            results = self.index.query(payload, user)
+            results = self.index.queryLong(payload, user = user)
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)
