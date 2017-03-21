@@ -62,6 +62,7 @@ class Text(markovify.Text):
 
 class Corpus:
     def __init__(self, dir, filter=[]):
+        self.dir = dir
         self.comboCache = MRU(3)
         authorsPath = os.path.join(dir, "authors")
         with open(authorsPath) as f:
@@ -69,19 +70,17 @@ class Corpus:
             self.authors = {v:k for k,v in self.authorIds.items()}
         self.models = {}
 
-        for file in os.listdir(dir):
-            if file == "authors":
-                continue
-            if filter and not self.authorIds[file] in filter:
-                continue
-
-            path = os.path.join(dir, file)
+    def getModel(self, userId):
+        if not userId in self.models:
+            path = os.path.join(self.dir, userId)
             with open(path) as f:
                 try:
                     contents = f.read()
-                    self.models[file] = Text.from_json(contents)
+                    self.models[userId] = Text.from_json(contents)
                 except:
                     print ("Failed on {0}".format(file))
+        return self.models[userId]
+
 
     def sentence_join(self, sentences):
         """
@@ -120,7 +119,7 @@ class Corpus:
         key = "+".join(set(names))
         model = self.comboCache.get(key)
         if not model:
-            models = [self.models[self.authors[name]] for name in names]
+            models = [self.getModel(self.authors[name]) for name in names]
             model = markovify.combine(models, [1]*len(models))
             self.comboCache.insert(key, model)
         return model
@@ -128,7 +127,7 @@ class Corpus:
     def impersonate(self, names, count=10):
 
         if len(names) == 1:
-            model = self.models[self.authors[names[0]]]
+            model = self.getModel(self.authors[names[0]])
         else:
             model = self.getCombinedModel(names)
 
@@ -144,7 +143,7 @@ class Corpus:
                 ret.append(sen)
         return ret 
     def inventConversation(self, names, count=10):
-            models = [self.models[self.authors[name]] for name in names]
+            models = [self.getModel(self.authors[name]) for name in names]
             ret = []
             tries = 0
             while len(ret) < count:
