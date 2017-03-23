@@ -8,6 +8,7 @@ import time
 import asyncio
 import index
 import subject
+import sys
 
 g_now = time.time()
 g_modTimes = {}
@@ -56,19 +57,13 @@ class PrefixNameSuffixChecker:
         return "{0} <name> {1} <text>".format(self.prefix, self.suffix)
 
 g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
-def whatDidTheySayCheck(text):
-    match = g_whatSaidPat.finditer(text)
-    for m in match:
-        off = m.start(1)
-        return off
-    return -1
-    
-
+g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
 class Soph:
-    addressPat = re.compile(r"^Ok((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
+    addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
 
     def makeQuery(self, text):
+        """ removes ?mark"""
         text = text.strip()
         if text[-1] == '?':
             text = text[0:-1]
@@ -88,6 +83,8 @@ class Soph:
                             (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
                             (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),                            
                             (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
+                            (StartsWithChecker("what does"), Soph.respondUserVerb),
+                            (StartsWithChecker("does"), Soph.respondUserVerbObject),
                             (StartsWithChecker("help"), Soph.help)] 
 
     async def help(self, prefix, suffix, message):
@@ -99,7 +96,7 @@ class Soph:
         for c in self.callbacks:
             offset = c[0](payload)
             if offset != -1:
-                resp = await c[1](self, payload[:offset], payload[offset:], message)
+                resp = await c[1](self, payload[:offset], payload[offset:].strip(), message)
                 if resp:
                     return resp
         return None
@@ -109,11 +106,74 @@ class Soph:
         reloaded = reload(index, "index.py")
         if reloaded or not self.index:
             self.index = index.Index("index")
+        return index
 
     def loadUsers(self):
         """ return a map of userId -> userName """
         userIds = json.loads(open("authors").read())
         return userIds
+
+    async def respondUserVerbObject(self, prefix, suffix, message):
+        return await self.respondUserVerb(prefix, suffix, message, True)
+
+    async def respondUserVerb(self, prefix, suffix, message, want_bool=False):
+        reload(subject, "subject.py")
+        index = self.reloadIndex()
+
+        userIds = self.loadUsers()
+        userNames = {v:k for k,v in userIds.items()}
+
+        thisUserWords = []
+        i_results = []
+
+        for k,v in userIds.items():
+            if suffix.startswith(v) and suffix[len(v)] == " ":
+                subj = v
+                pred = self.makeQuery(suffix[len(v):].strip())
+                match = g_nickNamePat.finditer(pred)
+                nickNames = None
+                thisUserWords = [k,v]
+                if match:
+                    for m in match:
+                        nickNames = m.group(1)
+                        thisUserWords.append(nickNames)
+
+                    pred = g_nickNamePat.sub("", pred)
+
+                i_results = self.index.query(pred, 200, k, True, dedupe=True)
+                user_words = " OR " .join(thisUserWords)
+                other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True)
+                results = []
+                for i in range(0, max(len(i_results), len(other_results))):
+                    if i < len(i_results):
+                        results.append(i_results[i])
+                    if i < len(other_results):
+                        results.append(other_results[i])
+
+                filteredResults = []
+                for r in results:
+                    try:
+                        if k == r[0]:
+                            output = subject.checkVerb(r[1], None, pred, want_bool)
+                        else:
+                            output = subject.checkVerb(r[1], nickNames or subj, pred, want_bool)
+                        if output:
+                            filteredResults.append((r[0],output["extract"]))
+                    except:
+                        pass
+
+                if len(filteredResults) > 10:
+                    filteredResults = filteredResults[0:10]
+                if filteredResults:
+                    return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
+
+                if " " in pred:
+                    return "I don't know"
+                return "I'm not sure what {0} {1}s".format(v, pred)
+
+        
+
+        return "I'm not sure how to answer that yet"
 
     async def whatDoWeThinkOf(self, prefix, suffix, message):
         self.reloadIndex()
@@ -144,7 +204,7 @@ class Soph:
 
         query = suffix
         query = self.makeQuery(query)
-        results = self.index.queryStats(query)
+        results = self.index.queryStats(query, expand=True)
 
         if len(results) > 10:
             results = results[:10]
@@ -180,7 +240,7 @@ class Soph:
 
     async def respondUserSaidWhat(self, prefix, suffix, message):
         fromUser = message.author.display_name
-        server = getattr(message.channel, "server")
+        server = getattr(message.channel, "server", None)
         self.reloadIndex()
         userNames = {v:k for k,v in self.loadUsers().items()}
         sayPat = re.compile(r"\s+say about\s")
@@ -196,7 +256,7 @@ class Soph:
 
             ret = ""
 
-            results = self.index.queryLong(payload, user = user, max= 5)
+            results = self.index.queryLong(payload, user = user, max= 8, expand=True)
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)
