@@ -1,8 +1,9 @@
 import spacy
 from spacy.symbols import nsubj, VERB
+from timer import * 
 nlp = None
 
-def checkVerb(text, name, verb, want_bool):
+def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     global nlp
     if not nlp:
         nlp = spacy.load('en')
@@ -19,7 +20,8 @@ def checkVerb(text, name, verb, want_bool):
         subject = ""
     line = text.strip()
 
-    doc = nlp(line)
+    with timer.sub_timer("nlp") as t:
+        doc = nlp(line)
     if len(doc) > 3:
         output["full_text"] = line
         s = ["{0} [{1} {3}]".format(word.text, word.lemma_, word.tag_, word.pos_) for word in doc]
@@ -57,38 +59,23 @@ def checkVerb(text, name, verb, want_bool):
             return output
         return None
 
-
-
-
-
-
-
-
-def filter(results, keyword):
+def filter(results, keyword, max = 100):
     """ filters out results where the keyword isn't the subject?"""
     global nlp
     if not nlp:
         nlp = spacy.load('en')
-    keyword = keyword.lower()
-    keyword = nlp(keyword)[0].lemma_
+    keyLemmas = set([w.lemma_ for w in nlp(keyword)])
+
     ret = []
     for res in results:
         r = res[1]
         doc = nlp(r)
         words = []
-        verbs = []
-
-        for word in doc:
-            words.append( (word.lemma_, word.pos_) )
-            if word.pos_ == "VERB":
-                if len(list(word.rights)) or not word.lemma_ == "be":
-                    verbs.append(word)
-        
         sub_verbs = []
 
         for word in doc:
             if word.dep_ == "nsubj":
-                if word.lemma_ == keyword:
+                if word.lemma_ in keyLemmas:
                     if word.head.pos_ == "VERB":
                         v = word.head
                         if list(v.rights) or not v.lemma_ == "be":
@@ -99,8 +86,8 @@ def filter(results, keyword):
             end = sub_verbs[0][1].right_edge.idx +  len(sub_verbs[0][1].right_edge.text)
             phrase = res[1][beg: end]
             
-
-
             ret.append((res[0], phrase))
+            if len(ret) >= max:
+                return ret
 
     return ret

@@ -5,6 +5,9 @@ from whoosh.index import create_in
 import json
 import re
 import whoosh.scoring
+from timer import Timer, NoTimer
+from whoosh.qparser import QueryParser
+from collections import defaultdict
 
 class Index:
     schema = Schema(content=TEXT(stored=True), 
@@ -14,40 +17,65 @@ class Index:
 
     def __init__(self, dir, authorIds = {}):
         self.ix = whoosh.index.open_dir(dir)
-        
         self.authorIds = None
         self.authors = None
         self.setUsers(authorIds)
+        self.searchers = []
+
+    class ScopedSearcher:
+        def __init__(self, parent, **kwargs):
+            self.parent = parent
+            self.handle = None
+            self.args = kwargs
+
+        def __enter__(self):
+            try:
+                self.handle = self.parent.searchers.pop()
+                return self.handle
+            except:
+                self.handle = self.parent.ix.searcher(**self.args)
+                return self.handle
+        
+        def __exit__(self,a,b,c):
+            self.parent.searchers.append(self.handle)
+            self.handle = None
+
+    def getSearcher(self, **kwargs):
+        return Index.ScopedSearcher(self, **kwargs)
 
     def setUsers(self, authorIds):
         self.authorIds = authorIds
         self.authors = {k:v for v, k in authorIds.items()}
 
-    def queryStats(self, text, expand=False):
+    def queryStats(self, text, expand=False, timer=NoTimer()):
         """
             Returns a sorted tuple of (count, userName)
         """
-        with self.ix.searcher() as searcher:
-            from whoosh.qparser import QueryParser
-            if expand:
-                qp = QueryParser("content", schema=self.ix.schema, termclass=whoosh.query.Variations)
-            else:
-                qp = QueryParser("content", schema=self.ix.schema)
-            q = qp.parse(text)
+        with timer.sub_timer("query-stats") as t:
+            with self.getSearcher() as searcher:
+                from whoosh.qparser import QueryParser
+                if expand:
+                    qp = QueryParser("content", schema=self.ix.schema, termclass=whoosh.query.Variations)
+                else:
+                    qp = QueryParser("content", schema=self.ix.schema)
+                q = qp.parse(text)
 
-            results = searcher.search(q, limit=100000)
+                with t.sub_timer("searcher.search") as s:
+                    results = searcher.search(q, limit=100000)
 
-            counts = {}
-
-            for r in results:
-                u = r["user"]
-                if not u in counts:
-                    counts[u] = 0
-                counts[u] += 1
-            
-            counts = [(count, id) for id,count in counts.items() if count > 0]
-            sc = reversed(sorted(counts))
-            return [v for v in sc]
+                with t.sub_timer("results") as s:
+                    #counts = {}
+                    counts = defaultdict( lambda: 0)
+                    
+                    with s.sub_timer("counts") as r:
+                        for r in results:
+                            u = r["user"]
+                            counts[u] += 1
+                    
+                    with s.sub_timer("reverse") as r:
+                        counts = [(count, id) for id,count in counts.items() if count > 0]
+                        sc = reversed(sorted(counts))
+                        return [v for v in sc]
 
     def deDupeResults(self, text, ret):
         exists = set([text.lower()])
@@ -61,21 +89,22 @@ class Index:
             i = i - 1
         return ret
 
-    def queryLong(self, text, max = 3, user = None, expand=False):
-        for attempt in range(0,3):
-            results = self.query(text, max*(1+attempt), user, expand=(expand or (attempt > 0)))
-            ret = list(results)
+    def queryLong(self, text, max = 3, user = None, expand=False, timer=NoTimer()):
+        with timer.sub_timer("query-long") as t:
+            for attempt in range(0,3):
+                with t.sub_timer(attempt) as s:
+                    results = self.query(text, max*(1+attempt), user, expand=(expand or (attempt > 0)))
+                    ret = list(results)
 
-            exists = self.deDupeResults(text, ret)
+                    exists = self.deDupeResults(text, ret)
 
-            if len(ret) >= max:
-                ret = ret[:max]
-                break
-
-        return ret
+                    if len(ret) >= max:
+                        ret = ret[:max]
+                        break
+            return ret
 
     def queryUserOrI(self, text, max = 3, userId = None, userName = None, expand=False, dedupe=False):
-        with self.ix.searcher(weighting = whoosh.scoring.TF_IDF) as searcher:
+        with self.getSearcher(weighting = whoosh.scoring.TF_IDF) as searcher:
             from whoosh.qparser import QueryParser
             qp = QueryParser("content", schema=self.ix.schema)
             i_node = qp.parse("I")
@@ -104,33 +133,36 @@ class Index:
 
             return results
 
-    def query(self, text, max = 3, user = None, expand=False, nonExpandText=None, dedupe=False):
-        with self.ix.searcher(weighting = whoosh.scoring.TF_IDF) as searcher:
-            from whoosh.qparser import QueryParser
-            if expand:
-                qp = QueryParser("content", schema=self.ix.schema, termclass=whoosh.query.Variations)
-            else:
-                qp = QueryParser("content", schema=self.ix.schema)
-            nonExpandQP = QueryParser("content", schema=self.ix.schema)
+    def query(self, text, max = 3, user = None, expand=False, nonExpandText=None, dedupe=False, timer=Timer("index.query")):
+        with timer.sub_timer("query") as ot:
+            with self.getSearcher(weighting = whoosh.scoring.TF_IDF) as searcher:
+                with ot.sub_timer("inner-q") as t:
+                    with t.sub_timer("query-parse") as s:
+                        if expand:
+                            qp = QueryParser("content", schema=self.ix.schema, termclass=whoosh.query.Variations)
+                        else:
+                            qp = QueryParser("content", schema=self.ix.schema)
+                        nonExpandQP = QueryParser("content", schema=self.ix.schema)
 
-            if user:
-                textNode = qp.parse(text)
-                textNode.fieldname = "content"
+                        if user:
+                            textNode = qp.parse(text)
+                            textNode.fieldname = "content"
+                            userNode = whoosh.query.Term("user", user)
+                            q = whoosh.query.And([textNode, userNode]) 
+                        else:
+                            q = qp.parse(text)
+                            if nonExpandText:
+                                q2 = nonExpandQP.parse(nonExpandText)
+                                q = whoosh.query.And([q, q2])
+                    
+                    with t.sub_timer("searcher.search") as s:
+                        results = searcher.search(q, limit=max)
 
-                userNode = whoosh.query.Term("user", user)
+                    with t.sub_timer("results") as s:
+                        results = [(r["user"], r["content"]) for r in results]
 
-                q = whoosh.query.And([textNode, userNode]) 
-            else:
-                q = qp.parse(text)
-                if nonExpandText:
-                    q2 = nonExpandQP.parse(nonExpandText)
-                    q = whoosh.query.And([q, q2])
-            
-            results = searcher.search(q, limit=max)
-
-            results = [(r["user"], r["content"]) for r in results]
-
-            if dedupe:
-                return self.deDupeResults(text, results)
-            else:
-                return results
+                    if dedupe:
+                        with t.sub_timer("dedupe") as s:
+                            return self.deDupeResults(text, results)
+                    else:
+                        return results

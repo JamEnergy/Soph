@@ -9,6 +9,7 @@ import asyncio
 import index
 import subject
 import sys
+from timer import Timer,NoTimer
 
 g_now = time.time()
 g_modTimes = {}
@@ -60,6 +61,7 @@ g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
 g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
 class Soph:
+    defaultOpts = {"timing" : True}
     addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
 
     def makeQuery(self, text):
@@ -70,10 +72,13 @@ class Soph:
         return text
 
     def __init__(self, corpus = None):
+        self.options = Soph.defaultOpts
         self.client = None
         self.corpus = corpus
         self.index = None
         self.lastReply = 0
+        self.userIds = None
+        self.loadUsers()
         self.lastFrom = ""
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
@@ -85,18 +90,34 @@ class Soph:
                             (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
                             (StartsWithChecker("what does"), Soph.respondUserVerb),
                             (StartsWithChecker("does"), Soph.respondUserVerbObject),
+                            (StartsWithChecker("set"), Soph.setOption),
                             (StartsWithChecker("help"), Soph.help)] 
+    async def setOption(self, prefix, suffix, message, timer=NoTimer()):
+        if self.userIds[message.author.id] != "Jerka":
+            return g_Lann
 
-    async def help(self, prefix, suffix, message):
+        suffix = suffix.strip()
+        index = suffix.index("=")
+        key = suffix[0:index].strip()
+        val = suffix[index+1:].strip()
+        if val.lower() == "true":
+            val = True
+        elif val.lower() == "false":
+            val = False
+        self.options[key] = val
+        return "Done"
+
+    async def help(self, prefix, suffix, message, timer=NoTimer()):
         ret = "I can parse requests of the following forms:\n"
         ret += "\n".join([c[0].help() for c in self.callbacks])
         return ret
 
-    async def dispatch(self, payload, message):
+    async def dispatch(self, payload, message, timer=NoTimer()):
         for c in self.callbacks:
             offset = c[0](payload)
             if offset != -1:
-                resp = await c[1](self, payload[:offset], payload[offset:].strip(), message)
+                print (message.content[0:100])
+                resp = await c[1](self, payload[:offset], payload[offset:].strip(), message, timer=timer)
                 if resp:
                     return resp
         return None
@@ -110,13 +131,13 @@ class Soph:
 
     def loadUsers(self):
         """ return a map of userId -> userName """
-        userIds = json.loads(open("authors").read())
-        return userIds
+        self.userIds = json.loads(open("authors").read())
+        return self.userIds
 
-    async def respondUserVerbObject(self, prefix, suffix, message):
-        return await self.respondUserVerb(prefix, suffix, message, True)
+    async def respondUserVerbObject(self, prefix, suffix, message, timer=NoTimer()):
+        return await self.respondUserVerb(prefix, suffix, message, True, timer=timer)
 
-    async def respondUserVerb(self, prefix, suffix, message, want_bool=False):
+    async def respondUserVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
         reload(subject, "subject.py")
         index = self.reloadIndex()
 
@@ -140,9 +161,9 @@ class Soph:
 
                     pred = g_nickNamePat.sub("", pred)
 
-                i_results = self.index.query(pred, 200, k, True, dedupe=True)
+                i_results = self.index.query(pred, 200, k, True, dedupe=True, timer= timer)
                 user_words = " OR " .join(thisUserWords)
-                other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True)
+                other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True, timer= timer)
                 results = []
                 for i in range(0, max(len(i_results), len(other_results))):
                     if i < len(i_results):
@@ -151,33 +172,33 @@ class Soph:
                         results.append(other_results[i])
 
                 filteredResults = []
-                for r in results:
-                    try:
-                        if k == r[0]:
-                            output = subject.checkVerb(r[1], None, pred, want_bool)
-                        else:
-                            output = subject.checkVerb(r[1], nickNames or subj, pred, want_bool)
-                        if output:
-                            filteredResults.append((r[0],output["extract"]))
-                    except:
-                        pass
+                with timer.sub_timer("subject-filter") as t:
+                    for r in results:
+                        if len(filteredResults) >= 10:
+                            break
+                        try:
+                            if k == r[0]:
+                                output = subject.checkVerb(r[1], None, pred, want_bool, timer=t)
+                            else:
+                                output = subject.checkVerb(r[1], nickNames or subj, pred, want_bool, timer=t)
+                            if output:
+                                filteredResults.append((r[0],output["extract"]))
+                        except:
+                            pass
 
-                if len(filteredResults) > 10:
-                    filteredResults = filteredResults[0:10]
                 if filteredResults:
                     return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
 
                 if " " in pred:
                     return "I don't know"
                 return "I'm not sure what {0} {1}s".format(v, pred)
-
-        
-
         return "I'm not sure how to answer that yet"
 
-    async def whatDoWeThinkOf(self, prefix, suffix, message):
-        self.reloadIndex()
-        reload(subject, "subject.py")
+    async def whatDoWeThinkOf(self, prefix, suffix, message, timer=NoTimer()):
+        with timer.sub_timer("reload") as t:
+            self.reloadIndex()
+            reload(subject, "subject.py")
+        
         userIds = self.loadUsers()
         self.index.setUsers(userIds)
         # TODO: Strip mentions
@@ -187,32 +208,32 @@ class Soph:
         query = suffix
         query = self.makeQuery(query)
 
-        results = self.index.queryLong(query, max=300)
-        results = subject.filter(results, query.split(" ")[0]) or subject.filter(results, query.split(" ")[-1])
-        if len(results) > 5:
-            results = results[:5]
+        results = self.index.queryLong(query, max=300, timer=timer)
+        with timer.sub_timer("subject-filter") as t:
+            results = subject.filter(results, query, max=5)
         ret +=  "We think...\n" + "\n".join( ["{0}: {1}".format(userIds[r[0]], r[1]) for r in results ] )
 
         return ret
-        
 
-    async def respondQueryStats(self, prefix, suffix, message):
-        fromUser = message.author.display_name
-        self.reloadIndex()
-        userIds = self.loadUsers()
-        self.index.setUsers(userIds)
+    async def respondQueryStats(self, prefix, suffix, message, timer=NoTimer()):
+        with timer.sub_timer("query-stats-callback") as t:
+            fromUser = message.author.display_name
+            with t.sub_timer("reload") as r:
+                self.reloadIndex()
+            userIds = self.loadUsers()
+            self.index.setUsers(userIds)
 
-        query = suffix
-        query = self.makeQuery(query)
-        results = self.index.queryStats(query, expand=True)
+            query = suffix
+            query = self.makeQuery(query)
+            results = self.index.queryStats(query, expand=True, timer= t)
 
-        if len(results) > 10:
-            results = results[:10]
-        if not results:
-            return "No one, apparently, {0}".format(fromUser)
-        return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
+            if len(results) > 10:
+                results = results[:10]
+            if not results:
+                return "No one, apparently, {0}".format(fromUser)
+            return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
 
-    async def respondMentions(self, prefix, suffix, message):
+    async def respondMentions(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         self.reloadIndex()
         userIds = self.loadUsers()
@@ -227,7 +248,7 @@ class Soph:
             return "No one, apparently, {0}".format(fromUser)
         return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
 
-    async def respondWhoSaid(self, prefix, suffix, message):
+    async def respondWhoSaid(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         self.reloadIndex()
         userIds = self.loadUsers()
@@ -238,7 +259,7 @@ class Soph:
             return "Apparently no one, {0}".format(fromUser)
         return "\n".join(["{0}: {1}".format(userIds[r[0]], r[1]) for r in results])
 
-    async def respondUserSaidWhat(self, prefix, suffix, message):
+    async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         server = getattr(message.channel, "server", None)
         self.reloadIndex()
@@ -256,7 +277,7 @@ class Soph:
 
             ret = ""
 
-            results = self.index.queryLong(payload, user = user, max= 8, expand=True)
+            results = self.index.queryLong(payload, user = user, max= 8, expand=True, timer=timer)
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)
@@ -270,7 +291,7 @@ class Soph:
                 return ret
         return "Nothing, apparently, {0}".format(fromUser)
 
-    async def respondImpersonate(self, prefix, suffix, message):
+    async def respondImpersonate(self, prefix, suffix, message, timer=NoTimer()):
         reloaded = reload(markov, "markov.py")
         if reloaded or not self.corpus:
             print ("Loading corpus")
@@ -299,18 +320,25 @@ class Soph:
         fromUser = message.author.display_name
         if fromUser == "Soph":
             return None
-            
-        response = await self.consumeInternal(message)
-        now = int(time.time())
         
-        if (fromUser != self.lastFrom) and (now - self.lastReply < 2) and response and not (fromUser in response):
-            response =  message.author.display_name + " - " + response
+        with Timer("full_request") as t:
+            response = await self.consumeInternal(message, timer=t)
+            now = int(time.time())
+            
+            if (fromUser != self.lastFrom) and (now - self.lastReply < 2) and response and not (fromUser in response):
+                response =  message.author.display_name + " - " + response
 
-        self.lastReply = now
-        self.lastFrom = fromUser
+            self.lastReply = now
+            self.lastFrom = fromUser
+            if not response:
+                t.disable()
+            
+        if self.options["timing"] and response:
+            response += "\n{0:.2f}s".format(t.duration)
+        
         return response
 
-    async def consumeInternal(self, message):
+    async def consumeInternal(self, message, timer=NoTimer()):
         fromUser = message.author.display_name
 
         payload = re.sub(Soph.addressPat, "", message.content)
@@ -318,7 +346,6 @@ class Soph:
         if message.channel and hasattr(message.channel ,'server'):
             server = message.channel.server
 
-        
         if message.channel.type != discord.ChannelType.private:
             if len(payload) == len(message.content):
                 return None
@@ -328,7 +355,7 @@ class Soph:
         if not payload:
             return "What?"
 
-        x = await self.dispatch(payload, message)
+        x = await self.dispatch(payload, message, timer=timer)
         if x:
             return x
 
