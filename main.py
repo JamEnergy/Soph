@@ -24,7 +24,7 @@ async def on_message(message):
             my_soph.setClient(client)
         response = await my_soph.consume(message)
         if response:
-            await client.send_message(message.channel, response)
+            await client.send_message(message.channel, response[0:1000])
     except Exception as e:
         print (e)
 

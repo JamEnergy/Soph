@@ -93,10 +93,8 @@ class Index:
         with timer.sub_timer("query-long") as t:
             for attempt in range(0,3):
                 with t.sub_timer(attempt) as s:
-                    results = self.query(text, max*(1+attempt), user, expand=(expand or (attempt > 0)))
+                    results = self.query(text, max*(2+attempt), user, expand=(expand or (attempt > 0)), timer=timer)
                     ret = list(results)
-
-                    exists = self.deDupeResults(text, ret)
 
                     if len(ret) >= max:
                         ret = ret[:max]

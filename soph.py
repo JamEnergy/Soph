@@ -72,6 +72,7 @@ class Soph:
         return text
 
     def __init__(self, corpus = None):
+        self.userCache = {}
         self.options = Soph.defaultOpts
         self.client = None
         self.corpus = corpus
@@ -165,15 +166,39 @@ class Soph:
                 user_words = " OR " .join(thisUserWords)
                 other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True, timer= timer)
                 results = []
+                res_content = []
+                res_user = []
                 for i in range(0, max(len(i_results), len(other_results))):
                     if i < len(i_results):
                         results.append(i_results[i])
+                        res_user.append(i_results[i][0])
+                        res_content.append(i_results[i][1])
                     if i < len(other_results):
                         results.append(other_results[i])
+                        res_user.append(other_results[i][0])
+                        res_content.append(other_results[i][1])
 
                 filteredResults = []
                 with timer.sub_timer("subject-filter") as t:
-                    for r in results:
+                    gen = subject.pipe(res_content)
+                    for i in range(0, len(res_content)):
+                        
+                        if len(filteredResults) >= 10:
+                            break
+                        try:
+                            doc = next(gen)
+                            if k == res_user[i]:
+                                output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
+                            else:
+                                output = subject.checkVerb(doc, nickNames or subj, pred, want_bool, timer=t)
+                            if output:
+                                filteredResults.append((res_user[i],output["extract"]))
+                        except:
+                            pass                        
+
+
+
+                    for r in []:
                         if len(filteredResults) >= 10:
                             break
                         try:
@@ -250,14 +275,21 @@ class Soph:
 
     async def respondWhoSaid(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
-        self.reloadIndex()
+        server = getattr(message.channel,'server',None)
+        with timer.sub_timer("reload") as t:
+            self.reloadIndex()
         userIds = self.loadUsers()
         query = suffix
         query = self.makeQuery(query)
-        results = self.index.queryLong(query)
+        with timer.sub_timer("query-long-wrap") as t:
+            results = self.index.queryLong(query, timer=t)
         if not results:
             return "Apparently no one, {0}".format(fromUser)
-        return "\n".join(["{0}: {1}".format(userIds[r[0]], r[1]) for r in results])
+        ret = "\n".join(["{0}: {1}".format(userIds[r[0]], r[1]) for r in results])
+        with timer.sub_timer("strip-mentions") as t:
+            ret = await self.stripMentions(ret)
+        return ret
+        
 
     async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
@@ -369,10 +401,15 @@ class Soph:
         matches = re.search("<@[!&]*(\d+)>", text)
         if matches:
             for m in matches.groups():
-                if server:
-                    info = discord.utils.find(lambda x: x.id == m, server.members) or discord.utils.find(lambda x: x.id == m, server.roles)
-                else:
-                    info = await self.client.get_user_info(m)
+                try:
+                    if m not in self.userCache:
+                        if server:
+                            self.userCache[m] = discord.utils.find(lambda x: x.id == m, server.members) or discord.utils.find(lambda x: x.id == m, server.roles)
+                        else:
+                            self.userCache[m] = await self.client.get_user_info(m)
+                except:
+                    pass
+                info = self.userCache[m] or {}
                 name = getattr(info, "display_name", getattr(info, "name", g_Lann))
                 text = re.sub("<@[!&]*"+m+">", "@"+name, text)
         return text

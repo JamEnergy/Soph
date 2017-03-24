@@ -3,6 +3,13 @@ from spacy.symbols import nsubj, VERB
 from timer import * 
 nlp = None
 
+def pipe(texts, batch_size=10, n_threads = 4):
+    global nlp
+    if not nlp:
+        nlp = spacy.load('en')
+
+    return nlp.pipe(texts)
+
 def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     global nlp
     if not nlp:
@@ -18,12 +25,14 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
         subject = name.lower().strip()
     else:
         subject = ""
-    line = text.strip()
 
     with timer.sub_timer("nlp") as t:
-        doc = nlp(line)
+        if isinstance(text, str):
+            doc = nlp(text.strip())
+        else:
+            doc = text
     if len(doc) > 3:
-        output["full_text"] = line
+        output["full_text"] = doc.string
         s = ["{0} [{1} {3}]".format(word.text, word.lemma_, word.tag_, word.pos_) for word in doc]
         output["tokenized"] =  ", ".join(s)
 
@@ -53,7 +62,7 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
             output["verb"] = v.lemma_
             beg = left.idx
             end = v.right_edge.idx+len(v.right_edge.text)
-            output["extract"]=line[beg:end]
+            output["extract"]=doc.string[beg:end]
 
         if "extract" in output:
             return output
