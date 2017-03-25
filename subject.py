@@ -10,6 +10,18 @@ def pipe(texts, batch_size=10, n_threads = 4):
 
     return nlp.pipe(texts)
 
+def isSame(text1, text2):
+    global nlp
+    if not nlp:
+        nlp = spacy.load('en')
+    try:
+        iter1 = nlp(text1)
+        iter2 = nlp(text2)
+
+        return [t.lemma for t in iter1] == [t.lemma for t in iter2]
+    except:
+        return False
+
 def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     global nlp
     if not nlp:

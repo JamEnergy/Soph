@@ -1,5 +1,6 @@
 import whoosh
-from whoosh.fields import Schema, TEXT, ID ,KEYWORD
+from whoosh.fields import Schema, TEXT, ID ,KEYWORD, DATETIME, NUMERIC
+import shutil
 import os.path
 from whoosh.index import create_in
 import json
@@ -8,32 +9,108 @@ import whoosh.scoring
 from timer import Timer, NoTimer
 from whoosh.qparser import QueryParser
 from collections import defaultdict
-
+import threading
+import datetime
+import time
 class Index:
     schema = Schema(content=TEXT(stored=True), 
-                user=ID(stored=True),
-                mentionsUsers=KEYWORD(stored=True),
-                mentionsRoles=KEYWORD(stored=True))
+                    user=ID(stored=True),
+                    mentionsUsers=KEYWORD(stored=True),
+                    mentionsRoles=KEYWORD(stored=True),
+                    time=DATETIME)
 
-    def __init__(self, dir, authorIds = {}):
+    def __init__(self, dir, authorIds = {}, context = None):
+        if not os.path.isdir(dir):
+            os.mkdir(dir)
+
+        if not list(os.listdir(dir)):
+            self.ix = create_in(dir, Index.schema)
+
         self.ix = whoosh.index.open_dir(dir)
         self.authorIds = None
         self.authors = None
         self.setUsers(authorIds)
         self.searchers = []
+        self.failedDir = "failed"
+        self.incomingDir = "incoming"
+        self.indexer = threading.Thread(target = Index.indexLoop, args=[self])
+        self.indexer.start()
+        self.logger = open("index.log", "a")
+        self.stopping = False
+    def __del__(self):
+        self.stopping = True
+        if self.indexer.is_alive():
+            self.indexer.join()
+
+    def log(self, text):
+        print (text)
+        self.logger.write(text)
+        self.logger.write("\n")
+        self.logger.flush()
+
+    def indexLoop(self):
+        print ("Beginning index loop")
+        writer = self.ix.writer()
+        while not self.stopping:
+            path = None
+            try:
+                for file in os.listdir(self.incomingDir):
+                    self.log("indexing {0}\n".format(file))
+                    path = os.path.join(self.incomingDir, file)
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            doc = json.loads(line)
+                            ts = doc["timestamp"]
+                            t = datetime.datetime.fromtimestamp(ts)
+                            userid = "{0}".format(doc["user"])
+                            writer.add_document(content=doc["content"].strip(), 
+                                                user=userid,
+                                                mentionsUsers=",".join(doc["mentions"]),
+                                                mentionsRoles=",".join(doc["role_mentions"]),
+                                                time=t)
+                    writer.commit()
+                    self.log("committed {0}\n".format(file))
+                    writer = self.ix.writer()
+                    for i in range(0,5):
+                        try:
+                            os.remove(path)
+                            break
+                        except:
+                            pass                            
+                else:
+                    time.sleep(2)
+            except Exception as e:
+                print(str(e))
+                self.log(str(e))
+                try:
+                    if path:
+                        if not os.path.isdir(self.failedDir):
+                            os.mkdir(self.failedDir)
+                        shutil.move(path, os.path.join(self.failedDir, file))
+                except Exception as ee:
+                    print(str(ee))
+                    self.log(str(ee))
+                    raise
+
 
     class ScopedSearcher:
         def __init__(self, parent, **kwargs):
             self.parent = parent
             self.handle = None
             self.args = kwargs
+            self.time = time.time()
 
         def __enter__(self):
             try:
                 self.handle = self.parent.searchers.pop()
+                if (time.time() - self.handle.time) > 5:
+                    self.handle = self.handle.refresh()
+                    setattr(self.handle, 'time', time.time())
+                    self.parent.log("Refreshed handle")
                 return self.handle
             except:
                 self.handle = self.parent.ix.searcher(**self.args)
+                setattr(self.handle, 'time', time.time())
                 return self.handle
         
         def __exit__(self,a,b,c):
@@ -64,7 +141,6 @@ class Index:
                     results = searcher.search(q, limit=100000)
 
                 with t.sub_timer("results") as s:
-                    #counts = {}
                     counts = defaultdict( lambda: 0)
                     
                     with s.sub_timer("counts") as r:
@@ -164,3 +240,12 @@ class Index:
                             return self.deDupeResults(text, results)
                     else:
                         return results
+
+if __name__ == "__main__":
+    index = Index("./mainIndex")
+
+    while True:
+        query = input("query:")
+        results = index.query(query)
+        for r in results:
+            print(r)

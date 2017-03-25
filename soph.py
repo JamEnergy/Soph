@@ -11,6 +11,19 @@ import subject
 import sys
 from timer import Timer,NoTimer
 
+class Logger:
+    def __init__(self, fileName):
+        self.handle = open(fileName, "a")
+
+    def __call__(self, something):
+        try:
+            text = "{0}\n".format(something)
+            self.handle.write(text)
+            self.handle.flush()
+            print (text.strip())
+        except:
+            pass
+
 g_now = time.time()
 g_modTimes = {}
 def reload(module, filepath):
@@ -40,6 +53,13 @@ class StartsWithChecker:
     def help(self):
         return "{0} <text>".format(self.prefix)
 
+class SplitChecker(StartsWithChecker):
+    def __init__(self, prefix):
+        StartsWithChecker.__init__(self, prefix)
+    
+    def help(self):
+        return "{0} <user> <text>".format(self.prefix)
+
 class PrefixNameSuffixChecker:
     def __init__(self, prefix, suffix):
         self.prefix = prefix
@@ -60,8 +80,11 @@ class PrefixNameSuffixChecker:
 g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
 g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
+
 class Soph:
-    defaultOpts = {"timing" : True}
+    master_id = '178547716014473216'
+    aliasPath = "aliases"
+    defaultOpts = {"timing" : False}
     addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
 
     def makeQuery(self, text):
@@ -71,8 +94,39 @@ class Soph:
             text = text[0:-1]
         return text
 
+    async def getUserId(self, name):
+        return self.userNameCache.get(name, None)
+    
+    async def getUserName(self, uid, server = None):
+        if uid in self.userCache:
+            return self.userCache[uid]
+
+        info = await self.client.get_user_info(uid)
+        if info:
+            name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
+            self.userCache[uid] = name
+            self.userNameCache[name] =uid
+            return name
+        
+        return None
+
+    async def loadAllUsers(self):
+        """ load and return map of id->name """
+        if time.time() - self.userCacheTime > 60:
+            for server in self.client.servers:
+                for member in server.members:
+                    uid = member.id
+                    self.userCache[uid] = member.display_name
+                    self.userNameCache[member.display_name] = uid
+                    self.userNameCache[member.name] = uid
+            self.userCacheTime = time.time()
+        return self.userCache
+
     def __init__(self, corpus = None):
-        self.userCache = {}
+        self.log = Logger("Soph.log")
+        self.userCache = {} #userId to userName
+        self.userCacheTime = 0
+        self.userNameCache = {} # userName to userId
         self.options = Soph.defaultOpts
         self.client = None
         self.corpus = corpus
@@ -80,6 +134,7 @@ class Soph:
         self.lastReply = 0
         self.userIds = None
         self.loadUsers()
+        self.loadAliases()
         self.lastFrom = ""
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
@@ -89,13 +144,63 @@ class Soph:
                             (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
                             (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),                            
                             (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
-                            (StartsWithChecker("what does"), Soph.respondUserVerb),
-                            (StartsWithChecker("does"), Soph.respondUserVerbObject),
+                            (SplitChecker("what does"), Soph.respondUserVerb),
+                            (SplitChecker("what did"), Soph.respondUserVerb),
+                            (SplitChecker("does"), Soph.respondUserVerbObject),
+                            (SplitChecker("did"), Soph.respondUserVerbObject),
+                            (StartsWithChecker("set alias"), Soph.setAlias),
                             (StartsWithChecker("set"), Soph.setOption),
                             (StartsWithChecker("help"), Soph.help)] 
-    async def setOption(self, prefix, suffix, message, timer=NoTimer()):
-        if self.userIds[message.author.id] != "Jerka":
+
+    async def setAlias(self, prefix, suffix, message, timer=NoTimer()):
+        if message.author.id != Soph.master_id:
+            return "You aren't allowed to touch my buttons :shy:"
+
+        index = suffix.index("=")
+        left = suffix[0:index].strip()
+        right = suffix[index+1:].strip()
+
+        await self.loadAllUsers()
+
+        if left in self.userNameCache:
+            existingName = left
+            newName = right
+        elif right in self.userNameCache:
+            existingName = right
+            newName = left
+        else:
             return g_Lann
+
+        if newName in self.userNameCache:
+            canonicalName = self.userCache[self.userNameCache[newName]]
+            if canonicalName == newName:
+                newName = existingName
+            return "{0} is already called {1} :/".format(canonicalName, newName)
+
+        self.userNameCache[newName] = self.userNameCache[existingName]
+
+        aliases = {}
+        if os.path.exists(Soph.aliasPath):
+            with open(Soph.aliasPath) as f:
+                aliases = json.loads(f.read())
+        aliases[newName] = self.userNameCache[newName]
+        with open(Soph.aliasPath, "w") as f:
+            f.write(json.dumps(aliases, indent=True))
+        
+        return "Done ({0} -> {1})".format(newName, existingName)
+    
+    def loadAliases(self):
+        # map of names->ids
+        if os.path.exists(Soph.aliasPath):
+            with open(Soph.aliasPath) as f:
+                aliases = json.loads(f.read())
+
+                for k,v in aliases.items():
+                    self.userNameCache[k] = v
+
+    async def setOption(self, prefix, suffix, message, timer=NoTimer()):
+        if message.author.id != Soph.master_id:
+            return "You aren't allowed to touch my buttons :shy:"
 
         suffix = suffix.strip()
         index = suffix.index("=")
@@ -117,7 +222,7 @@ class Soph:
         for c in self.callbacks:
             offset = c[0](payload)
             if offset != -1:
-                print (message.content[0:100])
+                self.log (message.content[0:100])
                 resp = await c[1](self, payload[:offset], payload[offset:].strip(), message, timer=timer)
                 if resp:
                     return resp
@@ -126,6 +231,7 @@ class Soph:
     def reloadIndex(self):
         """ reloads Index if necessary """
         reloaded = reload(index, "index.py")
+        
         if reloaded or not self.index:
             self.index = index.Index("index")
         return index
@@ -133,6 +239,10 @@ class Soph:
     def loadUsers(self):
         """ return a map of userId -> userName """
         self.userIds = json.loads(open("authors").read())
+        for un, uid in self.userIds.items():
+            self.userNameCache[uid] = un
+        self.userCache.update(self.userIds)
+        
         return self.userIds
 
     async def respondUserVerbObject(self, prefix, suffix, message, timer=NoTimer()):
@@ -142,39 +252,31 @@ class Soph:
         reload(subject, "subject.py")
         index = self.reloadIndex()
 
-        userIds = self.loadUsers()
-        userNames = {v:k for k,v in userIds.items()}
+        userIds = await self.loadAllUsers()
+        userNames = self.userNameCache
 
         thisUserWords = []
         i_results = []
 
-        for k,v in userIds.items():
-            if suffix.startswith(v) and suffix[len(v)] == " ":
-                subj = v
-                pred = self.makeQuery(suffix[len(v):].strip())
-                match = g_nickNamePat.finditer(pred)
+        for subj,uid in self.userNameCache.items():
+            if suffix.startswith(subj) and suffix[len(subj)] == " ":
+                pred = self.makeQuery(suffix[len(subj):].strip())
                 nickNames = None
-                thisUserWords = [k,v]
-                if match:
-                    for m in match:
-                        nickNames = m.group(1)
-                        thisUserWords.append(nickNames)
+                thisUserWords = [uid]
+                for _name, _id in self.userNameCache.items():
+                    if _id == uid:
+                        thisUserWords.append(_name)
 
-                    pred = g_nickNamePat.sub("", pred)
-
-                i_results = self.index.query(pred, 200, k, True, dedupe=True, timer= timer)
+                i_results = self.index.query(pred, 200, uid, True, dedupe=True, timer= timer)
                 user_words = " OR " .join(thisUserWords)
                 other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True, timer= timer)
-                results = []
                 res_content = []
                 res_user = []
                 for i in range(0, max(len(i_results), len(other_results))):
                     if i < len(i_results):
-                        results.append(i_results[i])
                         res_user.append(i_results[i][0])
                         res_content.append(i_results[i][1])
                     if i < len(other_results):
-                        results.append(other_results[i])
                         res_user.append(other_results[i][0])
                         res_content.append(other_results[i][1])
 
@@ -187,29 +289,17 @@ class Soph:
                             break
                         try:
                             doc = next(gen)
-                            if k == res_user[i]:
+                            if uid == res_user[i]:
                                 output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
                             else:
-                                output = subject.checkVerb(doc, nickNames or subj, pred, want_bool, timer=t)
+                                for n in thisUserWords:
+                                    output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
+                                    if output:
+                                        break
                             if output:
                                 filteredResults.append((res_user[i],output["extract"]))
                         except:
                             pass                        
-
-
-
-                    for r in []:
-                        if len(filteredResults) >= 10:
-                            break
-                        try:
-                            if k == r[0]:
-                                output = subject.checkVerb(r[1], None, pred, want_bool, timer=t)
-                            else:
-                                output = subject.checkVerb(r[1], nickNames or subj, pred, want_bool, timer=t)
-                            if output:
-                                filteredResults.append((r[0],output["extract"]))
-                        except:
-                            pass
 
                 if filteredResults:
                     return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
@@ -224,7 +314,7 @@ class Soph:
             self.reloadIndex()
             reload(subject, "subject.py")
         
-        userIds = self.loadUsers()
+        userIds = await self.loadAllUsers()
         self.index.setUsers(userIds)
         # TODO: Strip mentions
 
@@ -236,7 +326,12 @@ class Soph:
         results = self.index.queryLong(query, max=300, timer=timer)
         with timer.sub_timer("subject-filter") as t:
             results = subject.filter(results, query, max=5)
-        ret +=  "We think...\n" + "\n".join( ["{0}: {1}".format(userIds[r[0]], r[1]) for r in results ] )
+            lines = []
+            for r in results:
+                un = await self.getUserName(r[0])
+                text = await self.stripMentions(r[1])
+                lines.append("{0}: {1}".format(un, text))
+        ret +=  "We think...\n" + "\n".join( lines )
 
         return ret
 
@@ -245,7 +340,7 @@ class Soph:
             fromUser = message.author.display_name
             with t.sub_timer("reload") as r:
                 self.reloadIndex()
-            userIds = self.loadUsers()
+            userIds = await self.loadAllUsers()
             self.index.setUsers(userIds)
 
             query = suffix
@@ -261,12 +356,12 @@ class Soph:
     async def respondMentions(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         self.reloadIndex()
-        userIds = self.loadUsers()
+        userIds = await self.loadAllUsers()
         query = suffix
         for k, v in userIds.items():
             query = query.replace(v, k)
         query = self.makeQuery(query)
-        results = self.index.queryStats(query)
+        results = self.index.queryStats(query) # TODO: do a proper mentions query...
         if len(results) > 10:
             results = results[:10]
         if not results:
@@ -278,14 +373,15 @@ class Soph:
         server = getattr(message.channel,'server',None)
         with timer.sub_timer("reload") as t:
             self.reloadIndex()
-        userIds = self.loadUsers()
+        userIds = await self.loadAllUsers()
         query = suffix
         query = self.makeQuery(query)
         with timer.sub_timer("query-long-wrap") as t:
-            results = self.index.queryLong(query, timer=t)
+            results = self.index.queryLong(query, timer=t, max=10)
+            results = [r for r in results if len(r[1]) < 300]
         if not results:
             return "Apparently no one, {0}".format(fromUser)
-        ret = "\n".join(["{0}: {1}".format(userIds[r[0]], r[1]) for r in results])
+        ret = "\n".join(["{0}: {1}".format(userIds.get(r[0], "?"), r[1]) for r in results])
         with timer.sub_timer("strip-mentions") as t:
             ret = await self.stripMentions(ret)
         return ret
@@ -295,7 +391,8 @@ class Soph:
         fromUser = message.author.display_name
         server = getattr(message.channel, "server", None)
         self.reloadIndex()
-        userNames = {v:k for k,v in self.loadUsers().items()}
+        await self.loadAllUsers()
+        userNames = self.userNameCache
         sayPat = re.compile(r"\s+say about\s")
         match = sayPat.finditer(suffix)
         for m in match:
@@ -310,6 +407,7 @@ class Soph:
             ret = ""
 
             results = self.index.queryLong(payload, user = user, max= 8, expand=True, timer=timer)
+            results = [r for r in results if len(r[1]) < 300 and not subject.isSame(r[1], payload)]
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)
@@ -326,9 +424,9 @@ class Soph:
     async def respondImpersonate(self, prefix, suffix, message, timer=NoTimer()):
         reloaded = reload(markov, "markov.py")
         if reloaded or not self.corpus:
-            print ("Loading corpus")
+            self.log ("Loading corpus")
             self.corpus = markov.Corpus("./corpus_3")
-            print ("Loaded corpus")
+            self.log ("Loaded corpus")
 
         names = re.split(",", suffix.strip())
         names = [name.strip() for name in names]
@@ -342,7 +440,7 @@ class Soph:
                 return reply
             return "Hmm... I couldn't think of anything to say {0}".format(g_Lann)
         except Exception as e:
-            print (e)
+            self.log (e)
             return g_Lann
 
     def setClient(self, _client):
@@ -398,18 +496,19 @@ class Soph:
         return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
     async def stripMentions(self, text, server = None):
-        matches = re.search("<@[!&]*(\d+)>", text)
+        matches = re.search("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
         if matches:
             for m in matches.groups():
                 try:
-                    if m not in self.userCache:
+                    name = await self.getUserName(m, server)
+                    if not name:
                         if server:
-                            self.userCache[m] = discord.utils.find(lambda x: x.id == m, server.members) or discord.utils.find(lambda x: x.id == m, server.roles)
+                            info = discord.utils.find(lambda x: x.id == m, server.roles)
                         else:
-                            self.userCache[m] = await self.client.get_user_info(m)
+                            info = await self.client.get_user_info(m)
+                        name = getattr(info, "display_name", getattr(info, "name", g_Lann))
                 except:
                     pass
-                info = self.userCache[m] or {}
-                name = getattr(info, "display_name", getattr(info, "name", g_Lann))
-                text = re.sub("<@[!&]*"+m+">", "@"+name, text)
+                if name:
+                    text = re.sub("<?@[!&]*"+m+">", "@"+name, text)
         return text
