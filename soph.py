@@ -1,3 +1,4 @@
+import itertools
 import json
 import os
 import re
@@ -10,6 +11,32 @@ import index
 import subject
 import sys
 from timer import Timer,NoTimer
+
+class Alternator:
+    def __init__(self, gens = []):
+        self.gens = gens
+        self.offset = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while True:
+            try:
+                self.offset = (self.offset  % len(self.gens))
+                gen = self.gens[self.offset]
+                
+                ret = next(gen)
+
+                self.offset += 1
+                return ret
+            except StopIteration as e:
+                del self.gens[self.offset]
+                if not self.gens:
+                    raise
+
+
+        
 
 class Logger:
     def __init__(self, fileName):
@@ -266,48 +293,36 @@ class Soph:
                 for _name, _id in self.userNameCache.items():
                     if _id == uid:
                         thisUserWords.append(_name)
+                break
 
-                i_results = self.index.query(pred, 200, uid, True, dedupe=True, timer= timer)
-                user_words = " OR " .join(thisUserWords)
-                other_results = self.index.query(pred, 200, expand=True, nonExpandText=user_words, dedupe=True, timer= timer)
-                res_content = []
-                res_user = []
-                for i in range(0, max(len(i_results), len(other_results))):
-                    if i < len(i_results):
-                        res_user.append(i_results[i][0])
-                        res_content.append(i_results[i][1])
-                    if i < len(other_results):
-                        res_user.append(other_results[i][0])
-                        res_content.append(other_results[i][1])
-
-                filteredResults = []
-                with timer.sub_timer("subject-filter") as t:
-                    gen = subject.pipe(res_content)
-                    for i in range(0, len(res_content)):
-                        
-                        if len(filteredResults) >= 10:
-                            break
-                        try:
-                            doc = next(gen)
-                            if uid == res_user[i]:
-                                output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
-                            else:
-                                for n in thisUserWords:
-                                    output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
-                                    if output:
-                                        break
+        with timer.sub_timer("combined-query") as t:
+            res = self.index.query(pred, 100, uid, expand=True, userNames=thisUserWords, dedupe=True, timer=t)
+        
+        filteredResults = []
+        with timer.sub_timer("subject-filter") as t:
+            for r in res:
+                if len(filteredResults) >= 10:
+                    break
+                try:
+                    doc = r[1]
+                    if uid == r[0]:
+                        output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
+                    else:
+                        for n in thisUserWords:
+                            output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
                             if output:
-                                filteredResults.append((res_user[i],output["extract"]))
-                        except:
-                            pass                        
+                                break
+                    if output:
+                        filteredResults.append((r[0],output["extract"]))
+                except:
+                    pass             
 
-                if filteredResults:
-                    return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
+        if filteredResults:
+            return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
 
-                if " " in pred:
-                    return "I don't know"
-                return "I'm not sure what {0} {1}s".format(v, pred)
-        return "I'm not sure how to answer that yet"
+        if " " in pred:
+            return "I don't know"
+        return "I'm not sure what {0} {1}s".format(subj, pred)
 
     async def whatDoWeThinkOf(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("reload") as t:
@@ -388,6 +403,7 @@ class Soph:
         
 
     async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
+        self.log("user-said-what")
         fromUser = message.author.display_name
         server = getattr(message.channel, "server", None)
         self.reloadIndex()
@@ -406,8 +422,14 @@ class Soph:
 
             ret = ""
 
-            results = self.index.queryLong(payload, user = user, max= 8, expand=True, timer=timer)
-            results = [r for r in results if len(r[1]) < 300 and not subject.isSame(r[1], payload)]
+            rgen = self.index.queryLong(payload, user = user, max= 20, expand=True, timer=timer)
+            results = []
+            for r in rgen:
+                if len(results) > 4:
+                    break
+                if len(r[1]) < 300 and not subject.isSame(r[1], payload):
+                    results.append(r)
+                    
             if results:
                 payload = re.sub(r'\*', r'', payload)
                 resp = "*{0} on {1}*:\n".format(name, payload)

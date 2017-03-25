@@ -12,6 +12,36 @@ from collections import defaultdict
 import threading
 import datetime
 import time
+
+class Results:
+    def __init__(self, gen, dedupe=True):
+        self.dedupe = dedupe
+        self.gen = gen
+        self.seen = set([])
+        self.field = "content"
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while True:
+            candidate = next(self.gen) # or throw stopiteration
+            if self.dedupe and candidate[self.field] in self.seen:
+                continue
+            if self.dedupe:
+                self.seen.add(candidate[self.field])
+            return (candidate["user"], candidate[self.field])
+
+def deduper(it, dedupe=True, field="content"):
+    seen = set([])
+    for item in it:
+        if dedupe and item[field] in seen:
+                continue
+        if dedupe:
+            seen.add(item[field])
+        yield (item["user"], item[field])
+    return None
+
 class Index:
     schema = Schema(content=TEXT(stored=True), 
                     user=ID(stored=True),
@@ -34,7 +64,7 @@ class Index:
         self.failedDir = "failed"
         self.incomingDir = "incoming"
         self.indexer = threading.Thread(target = Index.indexLoop, args=[self])
-        self.indexer.start()
+        #self.indexer.start()
         self.logger = open("index.log", "a")
         self.stopping = False
     def __del__(self):
@@ -76,9 +106,12 @@ class Index:
                             os.remove(path)
                             break
                         except:
-                            pass                            
+                            pass
+                    self.searchers = []
+                    self.getSearcher()
                 else:
-                    time.sleep(2)
+                    time.sleep(10)
+
             except Exception as e:
                 print(str(e))
                 self.log(str(e))
@@ -169,7 +202,7 @@ class Index:
         with timer.sub_timer("query-long") as t:
             for attempt in range(0,3):
                 with t.sub_timer(attempt) as s:
-                    results = self.query(text, max*(2+attempt), user, expand=(expand or (attempt > 0)), timer=timer)
+                    results = self.query(text, max*(2+attempt), user, expand=(expand or (attempt > 0)), timer=t)
                     ret = list(results)
 
                     if len(ret) >= max:
@@ -201,13 +234,14 @@ class Index:
 
             results = searcher.search(q, limit=max)
 
-            results = [(r["user"], r["content"]) for r in results]
+            return Results(results)
 
-            results = self.deDupeResults(text, results)
-
-            return results
-
-    def query(self, text, max = 3, user = None, expand=False, nonExpandText=None, dedupe=False, timer=Timer("index.query")):
+    def query(self, text, max = 3, user = None, expand=False, userNames=[], dedupe=False, timer=Timer("index.query")):
+        """ text: the main text query of the content. expand=bool applies to this. 
+                  if user or userNames are supplied, text is restricted to content (else no field res)
+            user: id of a user to restrict to
+            userNames: ORed with 'user', but a text search in content :/
+                  """
         with timer.sub_timer("query") as ot:
             with self.getSearcher(weighting = whoosh.scoring.TF_IDF) as searcher:
                 with ot.sub_timer("inner-q") as t:
@@ -218,28 +252,29 @@ class Index:
                             qp = QueryParser("content", schema=self.ix.schema)
                         nonExpandQP = QueryParser("content", schema=self.ix.schema)
 
+                        userNodes = []
+                        # Massive spaghetti here
+                        textNode = qp.parse(text)
+                        
                         if user:
-                            textNode = qp.parse(text)
                             textNode.fieldname = "content"
                             userNode = whoosh.query.Term("user", user)
-                            q = whoosh.query.And([textNode, userNode]) 
+                            userNodes.append(userNode)
                         else:
-                            q = qp.parse(text)
-                            if nonExpandText:
-                                q2 = nonExpandQP.parse(nonExpandText)
-                                q = whoosh.query.And([q, q2])
+                            textNode.fieldname = "content"
+                            if userNames:
+                                q2 = nonExpandQP.parse(" OR " .join(userNames))
+                                q2.field = "content"
+                                userNodes.append(q2)
+                        q = textNode
+                        if userNodes:
+                            u = whoosh.query.Or(userNodes)
+                            q = whoosh.query.And([q, u])
                     
                     with t.sub_timer("searcher.search") as s:
                         results = searcher.search(q, limit=max)
 
-                    with t.sub_timer("results") as s:
-                        results = [(r["user"], r["content"]) for r in results]
-
-                    if dedupe:
-                        with t.sub_timer("dedupe") as s:
-                            return self.deDupeResults(text, results)
-                    else:
-                        return results
+                    return deduper(results, dedupe=dedupe)
 
 if __name__ == "__main__":
     index = Index("./mainIndex")
