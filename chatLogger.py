@@ -77,7 +77,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 log_text("skipping {0}".format(content[0:100]))
                 continue
 
-            if log.embeds:
+            if log.embeds and disableLinks:
                 content = re.sub("http", "xxx", content)
 
             doc = { "content" : content,

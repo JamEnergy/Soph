@@ -413,8 +413,7 @@ class Soph:
                 resp = "*{0} on {1}*:\n".format(name, payload)
                 for i in range(0,len(results)):
                     text = results[i][1]
-                    if server:
-                        text =  await self.stripMentions(text, server)
+                    text =  await self.stripMentions(text, server)
                     resp += "{0}) {1}\n".format(i+1, text)
                 ret += resp
             if ret:
@@ -496,8 +495,8 @@ class Soph:
         return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
     async def stripMentions(self, text, server = None):
-        matches = re.search("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
-        if matches:
+        it = re.finditer("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
+        for matches in it:
             for m in matches.groups():
                 try:
                     name = await self.getUserName(m, server)
