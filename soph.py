@@ -37,6 +37,15 @@ class Alternator:
 
 
         
+def batches(iterable, batchSize):
+    batch = []
+    for it in iterable:
+        batch.append(it)
+        if len(batch) == batchSize:
+            yield batch
+            batch = []
+    yield batch
+    return None
 
 class Logger:
     def __init__(self, fileName):
@@ -299,6 +308,7 @@ class Soph:
             res = self.index.query(pred, 100, uid, expand=True, userNames=thisUserWords, dedupe=True, timer=t)
         
         filteredResults = []
+
         with timer.sub_timer("subject-filter") as t:
             for r in res:
                 if len(filteredResults) >= 10:
@@ -316,7 +326,6 @@ class Soph:
                         filteredResults.append((r[0],output["extract"]))
                 except:
                     pass             
-
         if filteredResults:
             return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
 

@@ -64,7 +64,7 @@ class Index:
         self.failedDir = "failed"
         self.incomingDir = "incoming"
         self.indexer = threading.Thread(target = Index.indexLoop, args=[self])
-        #self.indexer.start()
+        self.indexer.start()
         self.logger = open("index.log", "a")
         self.stopping = False
     def __del__(self):
