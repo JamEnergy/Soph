@@ -12,6 +12,7 @@ from collections import defaultdict
 import threading
 import datetime
 import time
+from whoosh.util.text import rcompile
 
 class Results:
     def __init__(self, gen, dedupe=True):
@@ -42,8 +43,21 @@ def deduper(it, dedupe=True, field="content"):
         yield (item["user"], item[field])
     return None
 
+tok_pat = rcompile(r"[+£€]?\w+(\.?\w+)*")
+STOP_WORDS = frozenset(('a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can',
+                        'for', 'from', 'have', 'if', 'in', 'is', 'it', 'may',
+                        'not', 'of', 'on', 'or', 'tbd', 'that', 'the', 'this',
+                        'to', 'when', 'will', 'with', 'yet'))
+def Analyzer(expression=tok_pat, stoplist=None, minsize=1, maxsize=None, gaps=False):
+    if stoplist is None:
+        stoplist = STOP_WORDS
+    return whoosh.analysis.StandardAnalyzer(expression=expression, 
+                                            stoplist=stoplist,
+                                            minsize=minsize, 
+                                            maxsize=maxsize, 
+                                            gaps=gaps)
 class Index:
-    schema = Schema(content=TEXT(stored=True), 
+    schema = Schema(content=TEXT(stored=True, analyzer=Analyzer()), 
                     user=ID(stored=True),
                     mentionsUsers=KEYWORD(stored=True),
                     mentionsRoles=KEYWORD(stored=True),
@@ -202,7 +216,7 @@ class Index:
         with timer.sub_timer("query-long") as t:
             for attempt in range(0,3):
                 with t.sub_timer(attempt) as s:
-                    results = self.query(text, max*(2+attempt), user, expand=(expand or (attempt > 0)), timer=t)
+                    results = self.query(text, max*(2+attempt), user, expand=(expand or (attempt > 0)), timer=t, dedupe=True)
                     ret = list(results)
 
                     if len(ret) >= max:
@@ -255,13 +269,11 @@ class Index:
                         userNodes = []
                         # Massive spaghetti here
                         textNode = qp.parse(text)
-                        
+                        textNode.fieldname = "content"
                         if user:
-                            textNode.fieldname = "content"
                             userNode = whoosh.query.Term("user", user)
                             userNodes.append(userNode)
                         else:
-                            textNode.fieldname = "content"
                             if userNames:
                                 q2 = nonExpandQP.parse(" OR " .join(userNames))
                                 q2.field = "content"

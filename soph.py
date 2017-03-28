@@ -11,6 +11,17 @@ import index
 import subject
 import sys
 from timer import Timer,NoTimer
+import traceback
+class ScopedStatus:
+    def __init__(self, client, text):
+        self.client = client
+        self.text = text
+        
+    async def __aenter__(self):
+        await self.client.change_presence(game = discord.Game(name=self.text))    
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.client.change_presence(game = None, status=discord.Status.online)    
 
 class Alternator:
     def __init__(self, gens = []):
@@ -174,9 +185,10 @@ class Soph:
         self.lastFrom = ""
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
+                            (StartsWithChecker("who said"), Soph.respondQueryStats),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
                             (StartsWithChecker("impersonate"), Soph.respondImpersonate),
-                            (StartsWithChecker("who said"), Soph.respondWhoSaid),
+                            (StartsWithChecker("what did we say about"), Soph.respondWhoSaid),
                             (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
                             (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),                            
                             (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
@@ -184,6 +196,7 @@ class Soph:
                             (SplitChecker("what did"), Soph.respondUserVerb),
                             (SplitChecker("does"), Soph.respondUserVerbObject),
                             (SplitChecker("did"), Soph.respondUserVerbObject),
+                            (StartsWithChecker("who"), Soph.respondWhoVerb),
                             (StartsWithChecker("set alias"), Soph.setAlias),
                             (StartsWithChecker("set"), Soph.setOption),
                             (StartsWithChecker("help"), Soph.help)] 
@@ -247,6 +260,9 @@ class Soph:
         elif val.lower() == "false":
             val = False
         self.options[key] = val
+
+        if key == "markov":
+            self.corpus = markov.Corpus(val)
         return "Done"
 
     async def help(self, prefix, suffix, message, timer=NoTimer()):
@@ -280,6 +296,44 @@ class Soph:
         self.userCache.update(self.userIds)
         
         return self.userIds
+
+    async def respondWhoVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
+        reload(subject, "subject.py")
+        index = self.reloadIndex()
+
+        userIds = await self.loadAllUsers()
+        thisUserWords = []
+        i_results = []
+        pred = self.makeQuery(suffix)
+
+        userNames = [k for k,v in self.userNameCache.items()]
+        with timer.sub_timer("combined-query") as t:
+            res = self.index.query(pred, 100, None, expand=True, userNames=None, dedupe=True, timer=t)
+        
+        filteredResults = []
+
+        with timer.sub_timer("subject-filter") as t:
+            for r in res:
+                if len(filteredResults) >= 10:
+                    break
+                try:
+                    doc = r[1]
+                    output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
+                    if not output:
+                        for n in thisUserWords:
+                            output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
+                            if output:
+                                break
+                    if output:
+                        filteredResults.append((r[0],output["extract"]))
+                except:
+                    pass             
+        if filteredResults:
+            return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
+
+        if " " in pred:
+            return "I don't know"
+        return "I'm not sure what {0} {1}s".format(subj, pred)
 
     async def respondUserVerbObject(self, prefix, suffix, message, timer=NoTimer()):
         return await self.respondUserVerb(prefix, suffix, message, True, timer=timer)
@@ -404,7 +458,7 @@ class Soph:
             results = self.index.queryLong(query, timer=t, max=10)
             results = [r for r in results if len(r[1]) < 300]
         if not results:
-            return "Apparently no one, {0}".format(fromUser)
+            return "Apparently nothing, {0}".format(fromUser)
         ret = "\n".join(["{0}: {1}".format(userIds.get(r[0], "?"), r[1]) for r in results])
         with timer.sub_timer("strip-mentions") as t:
             ret = await self.stripMentions(ret)
@@ -412,7 +466,6 @@ class Soph:
         
 
     async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
-        self.log("user-said-what")
         fromUser = message.author.display_name
         server = getattr(message.channel, "server", None)
         self.reloadIndex()
@@ -455,14 +508,18 @@ class Soph:
         reloaded = reload(markov, "markov.py")
         if reloaded or not self.corpus:
             self.log ("Loading corpus")
-            self.corpus = markov.Corpus("./corpus_3")
+            self.corpus = markov.Corpus("./markovData")
             self.log ("Loaded corpus")
 
         names = re.split(",", suffix.strip())
         names = [name.strip() for name in names]
+        try:
+            ids = [self.userNameCache[name] for name in names]
+        except KeyError as key:
+            return "Data for {0} not found {1}".format(key, g_Lann)
 
         try:
-            lines = self.corpus.impersonate(names, 1)
+            lines = self.corpus.impersonate(ids, 1)
             if lines:
                 reply = lines[0]
                 if message.channel.type != discord.ChannelType.private:
@@ -499,36 +556,38 @@ class Soph:
         return response
 
     async def consumeInternal(self, message, timer=NoTimer()):
-        fromUser = message.author.display_name
+        async with ScopedStatus(self.client, "with your text data") as status:
+            fromUser = message.author.display_name
 
-        payload = re.sub(Soph.addressPat, "", message.content)
-        server = None
-        if message.channel and hasattr(message.channel ,'server'):
-            server = message.channel.server
+            payload = re.sub(Soph.addressPat, "", message.content)
+            server = None
+            if message.channel and hasattr(message.channel ,'server'):
+                server = message.channel.server
 
-        if message.channel.type != discord.ChannelType.private:
-            if len(payload) == len(message.content):
-                return None
-            if message.channel.name == "ch160":
-                return None
+            if message.channel.type != discord.ChannelType.private:
+                if len(payload) == len(message.content):
+                    return None
+                if message.channel.name == "ch160":
+                    return None
 
-        if not payload:
-            return "What?"
+            if not payload:
+                return "What?"
 
-        x = await self.dispatch(payload, message, timer=timer)
-        if x:
-            return x
+            x = await self.dispatch(payload, message, timer=timer)
+            if x:
+                return x
 
-        if fromUser == "fLux":
-            return "Lux, pls. :sweat_drops:"
-            
-        reply = await self.stripMentions(payload, server)
-        return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
+            if fromUser == "fLux":
+                return "Lux, pls. :sweat_drops:"
+                
+            reply = await self.stripMentions(payload, server)
+            return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
     async def stripMentions(self, text, server = None):
         it = re.finditer("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
         for matches in it:
             for m in matches.groups():
+                name = "?"
                 try:
                     name = await self.getUserName(m, server)
                     if not name:

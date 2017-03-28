@@ -32,7 +32,11 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     iter = nlp(verb)
     verb = iter[0]
     require_object = len(iter) > 1 or not want_bool
-    
+    objects = []
+    if require_object and len(iter) > 1:
+        for word in iter[1:]:
+            pass
+    objects = set(objects)
     if name:
         subject = name.lower().strip()
     else:

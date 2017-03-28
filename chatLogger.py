@@ -9,9 +9,9 @@ import datetime
 from collections import defaultdict
 client = discord.Client()
 import shutil
-skip = re.compile(r"^\[\d+:\d+ [aApP][mM]\]")
+skip = re.compile(r"(^\[\d+:\d+ [aApP][mM]\])|(.*(Today)|(Yesterday) at \d+:\d+ [AP]M)|(.* - \d\d/\d\d/20\d\d\s*$)")
 
-logger = open("log.log", "w")
+logger = open("log.log", "a")
 def log_text(text):
     global logger
     try:
@@ -44,7 +44,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 authors = json.loads(j)
     i = 0
     lim = 10000000
-    gen = client.logs_from(channel, limit=lim, after=fromTime, before=toTime, reverse=True)
+    gen = client.logs_from(channel, limit=lim, after=fromTime, before=toTime)
     minLen = 20
     maxLen = 100
     gap = 5
@@ -58,6 +58,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
     try:
         fh = None
         filename = ""
+        numSkipped = 0
         async for log in gen:
             i = i+1
             if (i%2500) == 0:
@@ -67,7 +68,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 log_text ("{0} messages...\n".format(i))
 
             if not fh:
-                filename = "{0}".format(datetime.datetime.now().timestamp())
+                filename = "{0}".format(datetime.datetime.utcnow().timestamp())
                 path = os.path.join(tempDir, filename)
                 fh = open(path, "wb")
 
@@ -75,6 +76,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
             content = log.content
             if skip.match(content):
                 log_text("skipping {0}".format(content[0:100]))
+                numSkipped += 1
                 continue
 
             if log.embeds and disableLinks:
@@ -124,7 +126,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
     if fh:
         fh.close()
         shutil.move(path, os.path.join(dir, filename))
-
+    log_text("Messages: {0}, of which skipped: {1}".format(i, numSkipped))
     log_text ("Finished channel\n")
 
 @client.event
@@ -148,7 +150,7 @@ async def on_ready():
                 lastRun = float(t)
                 lastRun = datetime.datetime.fromtimestamp(lastRun)
 
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         for channel in channels:
             if channel.type == discord.ChannelType.text:
                 if channel.name in ["ch160",
