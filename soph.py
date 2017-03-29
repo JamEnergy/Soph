@@ -12,6 +12,7 @@ import subject
 import sys
 from timer import Timer,NoTimer
 import traceback
+import timeutils
 class ScopedStatus:
     def __init__(self, client, text):
         self.client = client
@@ -129,6 +130,8 @@ g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
 
 class Soph:
+    timePat = re.compile(r"\b(([012]\d:?[012345][05])|([12]?\d(\d[05])?\s*[aApP][mM]))\b")
+    timeZonepat = re.compile(r"(CET)|(UTC)|(time)|(GMT)|(BST)|(CEST)|(server)", re.IGNORECASE)
     master_id = '178547716014473216'
     aliasPath = "aliases"
     defaultOpts = {"timing" : False}
@@ -182,6 +185,8 @@ class Soph:
         self.userIds = None
         self.loadUsers()
         self.loadAliases()
+        self.tz = {} # map of uid -> timezone
+        self.loadTz()
         self.lastFrom = ""
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
@@ -198,6 +203,7 @@ class Soph:
                             (SplitChecker("did"), Soph.respondUserVerbObject),
                             (StartsWithChecker("who"), Soph.respondWhoVerb),
                             (StartsWithChecker("set alias"), Soph.setAlias),
+                            (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (StartsWithChecker("set"), Soph.setOption),
                             (StartsWithChecker("help"), Soph.help)] 
 
@@ -246,6 +252,28 @@ class Soph:
 
                 for k,v in aliases.items():
                     self.userNameCache[k] = v
+    
+    def loadTz(self):
+        try:
+            with open("timezones") as f:
+               tz = json.loads( f.read() )
+        except:
+            if os.path.exists("timezones"):
+                return g_Lann
+        self.tz = tz
+
+    async def setTimeZone(self, prefix, suffix, message, timer=NoTimer()):
+        tz = suffix.strip()
+        if "/" not in tz:
+            tz = "Europe/"+tz
+        try:
+            timeutils.to_utc("00:00", tz)
+        except:
+            return "Tried to set your locale to {0}, but that doesn't work with time conversion".format(tz)
+        self.tz[message.author.id] = tz
+        with open("timezones", "w", encoding="utf-8") as of:
+            of.write(json.dumps(self.tz))
+        return "Done"                    
 
     async def setOption(self, prefix, suffix, message, timer=NoTimer()):
         if message.author.id != Soph.master_id:
@@ -266,9 +294,30 @@ class Soph:
         return "Done"
 
     async def help(self, prefix, suffix, message, timer=NoTimer()):
-        ret = "I can parse requests of the following forms:\n"
-        ret += "\n".join([c[0].help() for c in self.callbacks])
-        return ret
+        suffix = suffix.strip()
+        if not suffix:
+            ret = "I can parse requests of the following forms:\n"
+            ret += "\n".join([c[0].help() for c in self.callbacks])
+            return ret
+        elif suffix.startswith("timezones"):
+            if message.channel.type != discord.ChannelType.private:
+                return "Ask me in private :shy:"
+            region = suffix[len("timezones"):]
+            region = region.strip()
+            
+            with open ("all_timezones.json") as f:
+                tzs = json.loads(f.read())            
+
+            if not region:
+                pat = re.compile(r'/.*')
+                zones = set([pat.sub("", t) for t in tzs if "/" in t])
+                return "Need a region to filter on, because there are loads.\nUse the command help timezones <region> with one of these regions:\n{0}".format("\n".join(zones))
+            
+            tzs = [re.sub(".*/", "", t) for t in tzs if t.lower().startswith(region.lower())]
+                
+            return "The supported locales in {0} are:\n".format(region) + "\n".join(tzs)
+        return g_Lann
+
 
     async def dispatch(self, payload, message, timer=NoTimer()):
         for c in self.callbacks:
@@ -539,6 +588,31 @@ class Soph:
             return None
         
         with Timer("full_request") as t:
+            if message.channel.name == "numanuma"  or message.channel.name == "botchannel":
+                uid = message.author.id
+                text = await self.stripMentions(message.content)
+                timeStr = timeutils.findTime(text)
+                if timeStr and ( ("my time" in text) or ("for me" in text)):
+                    if uid in self.tz:
+                        try:
+                            utcTime = timeutils.to_utc(timeStr, self.tz[uid])
+                        except:
+                            return None
+                        utcTimeStr = str(utcTime)[:-3]
+                        tzStr = re.sub(".*/", "", self.tz[uid])
+                        return "{0} for {1} ({2}) is {3} UTC ({4} from now)".format(timeStr, message.author.display_name, tzStr, utcTimeStr, timeutils.offset_from_now(utcTime))
+                    else:
+                        return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
+                    
+                if timeStr and not Soph.timeZonepat.search(text):
+                    try:
+                        utcTime = timeutils.to_utc(timeStr, self.tz[uid])
+                    except:
+                        return None
+                    return "@{0} - what time zone?".format(message.author.display_name)
+
+
+            
             response = await self.consumeInternal(message, timer=t)
             now = int(time.time())
             
