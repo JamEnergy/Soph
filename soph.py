@@ -560,10 +560,11 @@ class Soph:
                 return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
             
         if timeStr and not Soph.timeZonepat.search(text):
-            try:
-                utcTime = timeutils.to_utc(timeStr, self.tz[uid])
-            except:
-                return None
+            if uid in self.tz:
+                try:
+                    utcTime = timeutils.to_utc(timeStr, self.tz[uid])
+                except:
+                    return "I tried to convert {0} to UTC, but I couldn't figure it out... {1}".format(timeStr, g_Lann)
             return "@{0} - what time zone?".format(message.author.display_name)
 
     async def consume(self, message):
