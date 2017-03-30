@@ -171,7 +171,7 @@ async def on_ready():
             f.write("{0}".format(now.timestamp()))
         
         log_text ("Finished dumping all\n")
-        asyncio.sleep(60)
+        await asyncio.sleep(60)
 try:
     client.run(tok)
 except Exception as e:
