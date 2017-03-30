@@ -64,7 +64,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 fh = open(path, "wb")
 
             author = log.author.id
-            if author == client.id:
+            if author == client.user.id:
                 continue
             content = log.content
             if skip.match(content):
