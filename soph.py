@@ -1,3 +1,4 @@
+from sophLogger import SophLogger as logger
 import itertools
 import json
 import os
@@ -13,6 +14,8 @@ import sys
 from timer import Timer,NoTimer
 import traceback
 import timeutils
+
+
 class ScopedStatus:
     def __init__(self, client, text):
         self.client = client
@@ -23,54 +26,6 @@ class ScopedStatus:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.change_presence(game = None, status=discord.Status.online)    
-
-class Alternator:
-    def __init__(self, gens = []):
-        self.gens = gens
-        self.offset = 0
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        while True:
-            try:
-                self.offset = (self.offset  % len(self.gens))
-                gen = self.gens[self.offset]
-                
-                ret = next(gen)
-
-                self.offset += 1
-                return ret
-            except StopIteration as e:
-                del self.gens[self.offset]
-                if not self.gens:
-                    raise
-
-
-        
-def batches(iterable, batchSize):
-    batch = []
-    for it in iterable:
-        batch.append(it)
-        if len(batch) == batchSize:
-            yield batch
-            batch = []
-    yield batch
-    return None
-
-class Logger:
-    def __init__(self, fileName):
-        self.handle = open(fileName, "a")
-
-    def __call__(self, something):
-        try:
-            text = "{0}\n".format(something)
-            self.handle.write(text)
-            self.handle.flush()
-            print (text.strip())
-        except:
-            pass
 
 g_now = time.time()
 g_modTimes = {}
@@ -130,12 +85,10 @@ g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
 
 class Soph:
-    timePat = re.compile(r"\b(([012]\d:?[012345][05])|([12]?\d(\d[05])?\s*[aApP][mM]))\b")
     timeZonepat = re.compile(r"(CET)|(UTC)|(time)|(GMT)|(BST)|(CEST)|(server)", re.IGNORECASE)
     master_id = '178547716014473216'
     aliasPath = "aliases"
-    defaultOpts = {"timing" : False}
-    addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))Soph\s*[,-\.:]\s*")
+    defaultOpts = {"timing" : False, "timehelp":False, "index":False, "name":"Soph"}
 
     def makeQuery(self, text):
         """ removes ?mark"""
@@ -173,11 +126,17 @@ class Soph:
         return self.userCache
 
     def __init__(self, corpus = None):
-        self.log = Logger("Soph.log")
+        self.log = logger("Soph.log")
         self.userCache = {} #userId to userName
         self.userCacheTime = 0
         self.userNameCache = {} # userName to userId
         self.options = Soph.defaultOpts
+        try:
+            with open("options.json") as f:
+                opts = json.loads(f.read())
+                self.options.update(opts)
+        except:
+            pass
         self.client = None
         self.corpus = corpus
         self.index = None
@@ -188,6 +147,7 @@ class Soph:
         self.tz = {} # map of uid -> timezone
         self.loadTz()
         self.lastFrom = ""
+        self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
                             (StartsWithChecker("who said"), Soph.respondQueryStats),
@@ -272,7 +232,7 @@ class Soph:
             return "Tried to set your locale to {0}, but that doesn't work with time conversion".format(tz)
         self.tz[message.author.id] = tz
         with open("timezones", "w", encoding="utf-8") as of:
-            of.write(json.dumps(self.tz))
+            of.write(json.dumps(self.tz, indent=True))
         return "Done"                    
 
     async def setOption(self, prefix, suffix, message, timer=NoTimer()):
@@ -334,7 +294,7 @@ class Soph:
         reloaded = reload(index, "index.py")
         
         if reloaded or not self.index:
-            self.index = index.Index("index")
+            self.index = index.Index("index", start = self.options["index"])
         return index
 
     def loadUsers(self):
@@ -582,36 +542,41 @@ class Soph:
     def setClient(self, _client):
         self.client = _client 
 
+    async def respondTime(self, message):
+        """ returns None if this wasn't a 'time' thing """
+        uid = message.author.id
+        text = await self.stripMentions(message.content)
+        timeStr = timeutils.findTime(text)
+        if timeStr and ( ("my time" in text) or ("for me" in text)):
+            if uid in self.tz:
+                try:
+                    utcTime = timeutils.to_utc(timeStr, self.tz[uid])
+                except:
+                    return None
+                utcTimeStr = str(utcTime)[:-3]
+                tzStr = re.sub(".*/", "", self.tz[uid])
+                return "{0} for {1} ({2}) is {3} UTC ({4} from now)".format(timeStr, message.author.display_name, tzStr, utcTimeStr, timeutils.offset_from_now(utcTime))
+            else:
+                return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
+            
+        if timeStr and not Soph.timeZonepat.search(text):
+            try:
+                utcTime = timeutils.to_utc(timeStr, self.tz[uid])
+            except:
+                return None
+            return "@{0} - what time zone?".format(message.author.display_name)
+
     async def consume(self, message):
         fromUser = message.author.display_name
-        if fromUser == "Soph":
+        if message.author.id == self.client.user.id:
             return None
         
         with Timer("full_request") as t:
-            if message.channel.name == "numanuma"  or message.channel.name == "botchannel":
-                uid = message.author.id
-                text = await self.stripMentions(message.content)
-                timeStr = timeutils.findTime(text)
-                if timeStr and ( ("my time" in text) or ("for me" in text)):
-                    if uid in self.tz:
-                        try:
-                            utcTime = timeutils.to_utc(timeStr, self.tz[uid])
-                        except:
-                            return None
-                        utcTimeStr = str(utcTime)[:-3]
-                        tzStr = re.sub(".*/", "", self.tz[uid])
-                        return "{0} for {1} ({2}) is {3} UTC ({4} from now)".format(timeStr, message.author.display_name, tzStr, utcTimeStr, timeutils.offset_from_now(utcTime))
-                    else:
-                        return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
-                    
-                if timeStr and not Soph.timeZonepat.search(text):
-                    try:
-                        utcTime = timeutils.to_utc(timeStr, self.tz[uid])
-                    except:
-                        return None
-                    return "@{0} - what time zone?".format(message.author.display_name)
-
-
+            if self.options["timehelp"]:
+                if message.channel.name == "numanuma"  or message.channel.name == "botchannel":
+                    resp = await self.respondTime(message)
+                    if resp:
+                        return resp
             
             response = await self.consumeInternal(message, timer=t)
             now = int(time.time())
@@ -633,7 +598,7 @@ class Soph:
         async with ScopedStatus(self.client, "with your text data") as status:
             fromUser = message.author.display_name
 
-            payload = re.sub(Soph.addressPat, "", message.content)
+            payload = re.sub(self.addressPat, "", message.content)
             server = None
             if message.channel and hasattr(message.channel ,'server'):
                 server = message.channel.server

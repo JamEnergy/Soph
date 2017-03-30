@@ -1,3 +1,4 @@
+from sophLogger import SophLogger as Logger
 import discord
 import asyncio
 import re
@@ -11,19 +12,9 @@ client = discord.Client()
 import shutil
 skip = re.compile(r"(^\[\d+:\d+ [aApP][mM]\])|(.*(Today)|(Yesterday) at \d+:\d+ [AP]M)|(.* - \d\d/\d\d/20\d\d\s*$)")
 
-logger = open("log.log", "a")
+_log = Logger("chatlog.log")
 def log_text(text):
-    global logger
-    try:
-        logger.write(str(text))
-        logger.write("\n")
-        logger.flush()
-    except:
-        pass
-    try:
-        print (str(text))
-    except:
-        pass
+    _log(text)
 
 tok = open("token.dat").read()
 dumpDir = "incoming"
@@ -73,6 +64,8 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 fh = open(path, "wb")
 
             author = log.author.id
+            if author == client.id:
+                continue
             content = log.content
             if skip.match(content):
                 log_text("skipping {0}".format(content[0:100]))

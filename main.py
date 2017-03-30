@@ -1,4 +1,5 @@
 import discord
+import sophLogger
 import soph
 import importlib
 import asyncio

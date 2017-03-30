@@ -63,7 +63,7 @@ class Index:
                     mentionsRoles=KEYWORD(stored=True),
                     time=DATETIME)
 
-    def __init__(self, dir, authorIds = {}, context = None):
+    def __init__(self, dir, authorIds = {}, context = None, start=True):
         if not os.path.isdir(dir):
             os.mkdir(dir)
 
@@ -78,9 +78,15 @@ class Index:
         self.failedDir = "failed"
         self.incomingDir = "incoming"
         self.indexer = threading.Thread(target = Index.indexLoop, args=[self])
-        self.indexer.start()
         self.logger = open("index.log", "a")
         self.stopping = False
+        if start:
+            self.startIndexer()
+            
+    def startIndexer(self):
+        self.indexer.start()
+        self.stopping = False
+        
     def __del__(self):
         self.stopping = True
         if self.indexer.is_alive():
