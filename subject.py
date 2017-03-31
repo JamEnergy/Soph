@@ -42,7 +42,7 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
     objects = []
     if require_object and len(iter) > 1:
         for word in iter[1:]:
-            objects.append(word.text)
+            objects.append(word.lemma_)
     objects = set(objects)
 
     if subjects:

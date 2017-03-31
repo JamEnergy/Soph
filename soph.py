@@ -375,10 +375,7 @@ class Soph:
                     if uid == r[0]:
                         output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
                     else:
-                        for n in thisUserWords:
-                            output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
-                            if output:
-                                break
+                        output = subject.checkVerbFull(doc, thisUserWords, pred, want_bool, timer=t)
                     if output:
                         filteredResults.append((r[0],output["extract"]))
                 except:
