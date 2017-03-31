@@ -2,9 +2,9 @@ import re
 import dateutil.parser as dateparser
 import datetime
 import pendulum
-timePats = [r"[012]\d[12345][05]",
-            r"[012]?\d:[12345][05]",
-            r"([12]?\d:?(\d[05])?\s*[aApP][mM])"
+timePats = [r"[012]\d[012345][05]", # 0130
+            r"[012]?\d:[012345][05]", # 01:30 or 1:30
+            r"([12]?\d:?(\d[05])?\s*[aApP][mM])" # permissive with am/pm
             ]
 
 timePat = re.compile(r"\b({0})\b".format( "|".join([r"({0})".format(p) for p in timePats])))

@@ -541,7 +541,7 @@ class Soph:
                 try:
                     utcTime = timeutils.to_utc(timeStr, self.tz[uid])
                 except:
-                    return "I tried to convert {0} to UTC, but I couldn't figure it out... {1}".format(timeStr, g_Lann)
+                    return None
             return "@{0} - what time zone?".format(message.author.display_name)
 
     async def consume(self, message):
