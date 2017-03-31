@@ -74,7 +74,7 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
                         filtered_verbs.append(v)
                     elif objects and list(v.rights):
                         for r in v.rights:
-                            if r.text in objects:
+                            if r.lemma_ in objects:
                                 filtered_verbs.append(v)
                                 break                        
                     elif require_object and list(v.rights):
