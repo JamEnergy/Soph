@@ -2,7 +2,12 @@ import re
 import dateutil.parser as dateparser
 import datetime
 import pendulum
-timePat = re.compile(r"\b(([012]?\d:?[012345][05])|([12]?\d:?(\d[05])?\s*[aApP][mM]))\b")
+timePats = [r"[012]\d[12345][05]",
+            r"[012]?\d:[12345][05]",
+            r"([12]?\d:?(\d[05])?\s*[aApP][mM])"
+            ]
+
+timePat = re.compile(r"\b({0})\b".format( "|".join([r"({0})".format(p) for p in timePats])))
 utctz = pendulum.timezone("UTC")
 
 def findTime(string):

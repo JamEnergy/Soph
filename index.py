@@ -12,6 +12,7 @@ from collections import defaultdict
 import threading
 import datetime
 import time
+import utils
 from whoosh.util.text import rcompile
 
 class Results:
@@ -63,22 +64,24 @@ class Index:
                     mentionsRoles=KEYWORD(stored=True),
                     time=DATETIME)
 
-    def __init__(self, dir, authorIds = {}, context = None, start=True):
+    def __init__(self, dir, authorIds = {}, context = None, start=True, baseDir=None):
         if not os.path.isdir(dir):
             os.mkdir(dir)
 
         if not list(os.listdir(dir)):
             self.ix = create_in(dir, Index.schema)
 
+        if not baseDir:
+            baseDir = os.path.join(os.path.split(dir)[0])
+
         self.ix = whoosh.index.open_dir(dir)
-        self.authorIds = None
-        self.authors = None
-        self.setUsers(authorIds)
         self.searchers = []
-        self.failedDir = "failed"
-        self.incomingDir = "incoming"
+        self.failedDir = os.path.join(baseDir, "failed")
+        utils.ensureDir(self.failedDir)
+        self.incomingDir = os.path.join(baseDir, "incoming")
+        utils.ensureDir(self.incomingDir)
         self.indexer = threading.Thread(target = Index.indexLoop, args=[self])
-        self.logger = open("index.log", "a")
+        self.logger = open(os.path.join(baseDir,"index.log"), "a")
         self.stopping = False
         if start:
             self.startIndexer()
@@ -172,10 +175,6 @@ class Index:
 
     def getSearcher(self, **kwargs):
         return Index.ScopedSearcher(self, **kwargs)
-
-    def setUsers(self, authorIds):
-        self.authorIds = authorIds
-        self.authors = {k:v for v, k in authorIds.items()}
 
     def queryStats(self, text, expand=False, timer=NoTimer()):
         """

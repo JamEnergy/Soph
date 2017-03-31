@@ -1,4 +1,5 @@
 import discord
+import reloader
 import sophLogger
 import soph
 import importlib
@@ -22,7 +23,7 @@ async def on_ready():
 async def on_message(message):
     try:
         global my_soph
-        if soph.reload(soph, "soph.py"):
+        if reloader.reload(soph, "soph.py"):
             my_soph = soph.Soph(my_soph.corpus)
             my_soph.setClient(client)
         response = await my_soph.consume(message)

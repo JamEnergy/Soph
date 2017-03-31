@@ -10,23 +10,22 @@ import datetime
 from collections import defaultdict
 client = discord.Client()
 import shutil
-skip = re.compile(r"(^\[\d+:\d+ [aApP][mM]\])|(.*(Today)|(Yesterday) at \d+:\d+ [AP]M)|(.* - \d\d/\d\d/20\d\d\s*$)")
+import utils
+skip = re.compile(r"(^\[\d+:\d+ [aApP][mM]\])|(.*((Today)|(Yesterday)) at \d+:\d+ [AP]M)|(.* - \d\d/\d\d/20\d\d\s*$)")
 
 _log = Logger("chatlog.log")
 def log_text(text):
     _log(text)
 
 tok = open("token.dat").read()
-dumpDir = "incoming"
+
 async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTime = None):
-    tempDir = "./temp"
+    tempDir = "temp"
+    utils.ensureDirs(tempDir)
+    utils.ensureDirs(dir)
     
     log_text ("dumping {0}\n".format(channel.name))
-    if not os.path.isdir(dir):
-        os.mkdir(dir)
 
-    if not os.path.isdir(tempDir):
-        os.mkdir(tempDir)
     authors = {}
     if os.path.exists("authors"):
         with open("authors") as f:
@@ -68,7 +67,7 @@ async def dumpChannel(client, channel, dir, disableLinks, fromTime = None, toTim
                 continue
             content = log.content
             if skip.match(content):
-                log_text("skipping {0}".format(content[0:100]))
+                log_text("skipping {0}".format(content[0:200]))
                 numSkipped += 1
                 continue
 
@@ -129,47 +128,55 @@ async def on_ready():
     log_text(client.user.id)
     log_text('------')
 
-    while True:
+    
+    
+    while True:        
+        with open("options.json") as f:
+            options = json.loads(f.read())
 
-        channels = client.get_all_channels()
+        baseDir = options.get("indexesBase","data")
+
+        for s in client.servers:
+            serverDir = os.path.join(baseDir, s.id)
+            
+            svrOpts = None
+            for it in options["servers"]:
+                if it.get("name", -1) == s.name or it.get("id", -1) == s.id:
+                    svrOpts = it
+                    break
+            if not svrOpts:
+                log_text("No config entry for {0} ({1}), skipping this server".format(s.name, s.id))
+                continue
         
-        log_text ("Dumping...\n")
+            log_text ("Dumping {0}...\n".format(s.name))
 
-        lastRun = None
-        timeFile = "last_run.time"
-        if os.path.exists(timeFile):
-            with open(timeFile, "r") as f:
-                t = f.read()
-                lastRun = float(t)
-                lastRun = datetime.datetime.fromtimestamp(lastRun)
+            lastRun = None
+            timeFile = os.path.join(serverDir, "last_run.time")
+            
+            if os.path.exists(timeFile):
+                with open(timeFile, "r") as f:
+                    t = f.read()
+                    lastRun = float(t)
+                    lastRun = datetime.datetime.fromtimestamp(lastRun)
 
-        now = datetime.datetime.utcnow()
-        for channel in channels:
-            if channel.type == discord.ChannelType.text:
-                if channel.name in ["ch160",
-                                    "numanuma",
-                                    "potatogallery", 
-                                    "gamelounge", 
-                                    "lisasworkshop", 
-                                    "norisworkshop", 
-                                    "rant",
-                                    "lewds"
-                                    ]:
-                    
-                    try:
-                        await dumpChannel(client,
-                                    channel, 
-                                    dumpDir, 
-                                    channel.name == "lewds", 
-                                    fromTime = lastRun, 
-                                    toTime = now)
-                    except Exception as e:
-                        log_text(e)
-                        raise
-                    
-        with open(timeFile, "w") as f:
-            f.write("{0}".format(now.timestamp()))
-        
+            now = datetime.datetime.utcnow()
+            channels = [c for c in s.channels if c.name in svrOpts["textChannels"]]
+            dumpDir = os.path.join(serverDir, "incoming")
+            for channel in channels:
+                try:
+                    await dumpChannel(client,
+                                channel, 
+                                dumpDir, 
+                                channel.name == "lewds", 
+                                fromTime = lastRun, 
+                                toTime = now)
+                except Exception as e:
+                    log_text(e)
+                    raise
+                        
+            with open(timeFile, "w") as f:
+                f.write("{0}".format(now.timestamp()))
+            
         log_text ("Finished dumping all\n")
         await asyncio.sleep(60)
 try:

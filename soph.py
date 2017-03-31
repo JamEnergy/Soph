@@ -1,4 +1,5 @@
 from sophLogger import SophLogger as logger
+import reloader
 import itertools
 import json
 import os
@@ -14,7 +15,7 @@ import sys
 from timer import Timer,NoTimer
 import traceback
 import timeutils
-
+import utils
 
 class ScopedStatus:
     def __init__(self, client, text):
@@ -26,23 +27,6 @@ class ScopedStatus:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.change_presence(game = None, status=discord.Status.online)    
-
-g_now = time.time()
-g_modTimes = {}
-def reload(module, filepath):
-    """ reload module based on modified time of filepath"""
-    global g_modTimes
-    global g_now
-    if not filepath in g_modTimes:
-        g_modTimes[filepath] = g_now
-
-    modTime = os.path.getmtime(filepath) 
-    if modTime > g_modTimes[filepath]:
-         g_modTimes[filepath] = modTime
-         importlib.reload(module)
-         return True
-
-    return False
 
 class StartsWithChecker:
     def __init__(self, prefix):
@@ -79,6 +63,7 @@ class PrefixNameSuffixChecker:
 
     def help(self):
         return "{0} <name> {1} <text>".format(self.prefix, self.suffix)
+
 
 g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
 g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
@@ -139,7 +124,11 @@ class Soph:
             pass
         self.client = None
         self.corpus = corpus
-        self.index = None
+
+        def cb(key):
+            return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
+        self.indexes = utils.SophDefaultDict(cb )
+        
         self.lastReply = 0
         self.userIds = None
         self.loadUsers()
@@ -166,6 +155,9 @@ class Soph:
                             (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (StartsWithChecker("set"), Soph.setOption),
                             (StartsWithChecker("help"), Soph.help)] 
+    def getIndex(self, serverId):
+        return self.indexes[serverId]
+
 
     async def setAlias(self, prefix, suffix, message, timer=NoTimer()):
         if message.author.id != Soph.master_id:
@@ -291,11 +283,8 @@ class Soph:
 
     def reloadIndex(self):
         """ reloads Index if necessary """
-        reloaded = reload(index, "index.py")
-        
-        if reloaded or not self.index:
-            self.index = index.Index("index", start = self.options["index"])
-        return index
+        reloaded = reloader.reload(index, "index.py")
+        return reloaded
 
     def loadUsers(self):
         """ return a map of userId -> userName """
@@ -307,8 +296,9 @@ class Soph:
         return self.userIds
 
     async def respondWhoVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
-        reload(subject, "subject.py")
-        index = self.reloadIndex()
+        reloader.reload(subject, "subject.py")
+
+        index = self.getIndex(message.channel.server.id)
 
         userIds = await self.loadAllUsers()
         i_results = []
@@ -316,7 +306,7 @@ class Soph:
 
         userNames = [k for k,v in self.userNameCache.items()]
         with timer.sub_timer("combined-query") as t:
-            res = self.index.query(pred, 100, None, expand=True, userNames=None, dedupe=True, timer=t)
+            res = index.query(pred, 100, None, expand=True, userNames=None, dedupe=True, timer=t)
         
         filteredResults = []
 
@@ -342,8 +332,7 @@ class Soph:
         return await self.respondUserVerb(prefix, suffix, message, True, timer=timer)
 
     async def respondUserVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
-        reload(subject, "subject.py")
-        index = self.reloadIndex()
+        reloader.reload(subject, "subject.py")
 
         userIds = await self.loadAllUsers()
         userNames = self.userNameCache
@@ -362,7 +351,8 @@ class Soph:
                 break
 
         with timer.sub_timer("combined-query") as t:
-            res = self.index.query(pred, 100, uid, expand=True, userNames=thisUserWords, dedupe=True, timer=t)
+            index = self.getIndex(message.server.id)
+            res = index.query(pred, 100, uid, expand=True, userNames=thisUserWords, dedupe=True, timer=t)
         
         filteredResults = []
 
@@ -389,19 +379,18 @@ class Soph:
 
     async def whatDoWeThinkOf(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("reload") as t:
-            self.reloadIndex()
-            reload(subject, "subject.py")
+            
+            reloader.reload(subject, "subject.py")
         
         userIds = await self.loadAllUsers()
-        self.index.setUsers(userIds)
         # TODO: Strip mentions
 
         ret = ""
 
         query = suffix
         query = self.makeQuery(query)
-
-        results = self.index.queryLong(query, max=300, timer=timer)
+        index = self.getIndex(message.server.id)
+        results = index.queryLong(query, max=300, timer=timer)
         with timer.sub_timer("subject-filter") as t:
             results = subject.filter(results, query, max=5)
             lines = []
@@ -416,30 +405,29 @@ class Soph:
     async def respondQueryStats(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("query-stats-callback") as t:
             fromUser = message.author.display_name
-            with t.sub_timer("reload") as r:
-                self.reloadIndex()
             userIds = await self.loadAllUsers()
-            self.index.setUsers(userIds)
 
             query = suffix
             query = self.makeQuery(query)
-            results = self.index.queryStats(query, expand=True, timer= t)
+            index = self.getIndex(message.server.id)
+
+            results = index.queryStats(query, expand=True, timer= t)
 
             if len(results) > 10:
                 results = results[:10]
             if not results:
                 return "No one, apparently, {0}".format(fromUser)
-            return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
+            return "\n".join(["{0}: {1}".format(userIds.get(v[1], "?"), v[0]) for v in results])
 
     async def respondMentions(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
-        self.reloadIndex()
         userIds = await self.loadAllUsers()
         query = suffix
         for k, v in userIds.items():
             query = query.replace(v, k)
         query = self.makeQuery(query)
-        results = self.index.queryStats(query) # TODO: do a proper mentions query...
+        index = self.getIndex(message.server.id)
+        results = index.queryStats(query) # TODO: do a proper mentions query...
         if len(results) > 10:
             results = results[:10]
         if not results:
@@ -449,13 +437,12 @@ class Soph:
     async def respondWhoSaid(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         server = getattr(message.channel,'server',None)
-        with timer.sub_timer("reload") as t:
-            self.reloadIndex()
         userIds = await self.loadAllUsers()
         query = suffix
         query = self.makeQuery(query)
         with timer.sub_timer("query-long-wrap") as t:
-            results = self.index.queryLong(query, timer=t, max=10)
+            index = self.getIndex(message.server.id)
+            results = index.queryLong(query, timer=t, max=10)
             results = [r for r in results if len(r[1]) < 300]
         if not results:
             return "Apparently nothing, {0}".format(fromUser)
@@ -468,7 +455,6 @@ class Soph:
     async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
         server = getattr(message.channel, "server", None)
-        self.reloadIndex()
         await self.loadAllUsers()
         userNames = self.userNameCache
         sayPat = re.compile(r"\s+say about\s")
@@ -483,8 +469,8 @@ class Soph:
             payload = self.makeQuery(suffix[m.end(0):])
 
             ret = ""
-
-            rgen = self.index.queryLong(payload, user = user, max= 20, expand=True, timer=timer)
+            index = self.getIndex(message.server.id)
+            rgen = index.queryLong(payload, user = user, max= 20, expand=True, timer=timer)
             results = []
             for r in rgen:
                 if len(results) > 4:

@@ -67,21 +67,31 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
 
         # verbs with the correct things on the RHS?
         filtered_verbs = []
+
         for v in verbs:
+            has_subj = False
             for l in v.lefts:
                 if (subjects and l.lemma_ in subjects) or (subj_i and l.lower_ == "i"):
                     if want_bool and not require_object:
                         filtered_verbs.append(v)
+                        has_subj = True
+                        # do we break here?
+                        break
                     elif objects and list(v.rights):
                         for r in v.rights:
                             if r.lemma_ in objects:
                                 filtered_verbs.append(v)
+                                has_subj = True
                                 break                        
                     elif require_object and list(v.rights):
                         for r in v.rights:
                             if r.pos_ == "NOUN":
                                 filtered_verbs.append(v)
+                                has_subj = True
                                 break
+            if not has_subj:
+                if v.text.endswith("ed"):
+                    filtered_verbs.append(v)
 
         for v in filtered_verbs:
             for left in v.subtree:
