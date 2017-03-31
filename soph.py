@@ -336,7 +336,7 @@ class Soph:
 
         if " " in pred:
             return "I don't know"
-        return "I'm not sure what {0} {1}s".format(subj, pred)
+        return "I'm not sure what {0} {1}s".format("who", pred)
 
     async def respondUserVerbObject(self, prefix, suffix, message, timer=NoTimer()):
         return await self.respondUserVerb(prefix, suffix, message, True, timer=timer)
