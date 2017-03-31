@@ -311,7 +311,6 @@ class Soph:
         index = self.reloadIndex()
 
         userIds = await self.loadAllUsers()
-        thisUserWords = []
         i_results = []
         pred = self.makeQuery(suffix)
 
@@ -327,16 +326,11 @@ class Soph:
                     break
                 try:
                     doc = r[1]
-                    output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
-                    if not output:
-                        for n in thisUserWords:
-                            output = subject.checkVerb(doc,n , pred, want_bool, timer=t)
-                            if output:
-                                break
+                    output = subject.checkVerbFull(doc, userNames, pred, want_bool, timer=t, subj_i = True)
                     if output:
                         filteredResults.append((r[0],output["extract"]))
-                except:
-                    pass             
+                except Exception as e:
+                    self.log("Exception while doing NLP filter: {0}".format(e))     
         if filteredResults:
             return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
 

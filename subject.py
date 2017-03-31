@@ -21,8 +21,15 @@ def isSame(text1, text2):
         return [t.lemma for t in iter1] == [t.lemma for t in iter2]
     except:
         return False
-
 def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
+    if name:
+        subjects = [name]
+    else:
+        subjects = None
+    return checkVerbFull(text, subjects, verb, want_bool, timer, subj_i = (not name))
+
+def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = False):
+    """ subj_i: if True, allow 'i' as a subject """
     global nlp
     if not nlp:
         nlp = spacy.load('en')
@@ -35,13 +42,12 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     objects = []
     if require_object and len(iter) > 1:
         for word in iter[1:]:
-            pass
+            objects.append(word.text)
     objects = set(objects)
-    if name:
-        subject = name.lower().strip()
-    else:
-        subject = ""
 
+    if subjects:
+        subjects = set ([name.lower().strip() for name in subjects])
+    
     with timer.sub_timer("nlp") as t:
         if isinstance(text, str):
             doc = nlp(text.strip())
@@ -59,12 +65,18 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
                 if possible_subject.head.lemma_ == verb.lemma_:
                     verbs.add(possible_subject.head)
 
+        # verbs with the correct things on the RHS?
         filtered_verbs = []
         for v in verbs:
             for l in v.lefts:
-                if (subject and l.lemma_ == subject.lower()) or (not subject and l.lower_ == "i"):
+                if (subjects and l.lemma_ in subjects) or (subj_i and l.lower_ == "i"):
                     if want_bool and not require_object:
                         filtered_verbs.append(v)
+                    elif objects and list(v.rights):
+                        for r in v.rights:
+                            if r.text in objects:
+                                filtered_verbs.append(v)
+                                break                        
                     elif require_object and list(v.rights):
                         for r in v.rights:
                             if r.pos_ == "NOUN":
