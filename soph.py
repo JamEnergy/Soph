@@ -125,6 +125,10 @@ class Soph:
         self.client = None
         self.corpus = corpus
 
+        def loadMarkov(key):
+            return markov.Corpus(os.path.join("data", str(key), "markovData"))
+        self.markovs = utils.SophDefaultDict(loadMarkov)
+
         def cb(key):
             return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
         self.indexes = utils.SophDefaultDict(cb )
@@ -491,11 +495,14 @@ class Soph:
         return "Nothing, apparently, {0}".format(fromUser)
 
     async def respondImpersonate(self, prefix, suffix, message, timer=NoTimer()):
-        reloaded = reload(markov, "markov.py")
-        if reloaded or not self.corpus:
+        reloaded = reloader.reload(markov, "markov.py")
+        sid = message.channel.server.id
+        if reloaded or not sid in self.markovs:
             self.log ("Loading corpus")
-            self.corpus = markov.Corpus("./markovData")
+            corpus = self.markovs[sid]
             self.log ("Loaded corpus")
+
+        corpus = self.markovs[sid]
 
         names = re.split(",", suffix.strip())
         names = [name.strip() for name in names]
@@ -505,7 +512,7 @@ class Soph:
             return "Data for {0} not found {1}".format(key, g_Lann)
 
         try:
-            lines = self.corpus.impersonate(ids, 1)
+            lines = corpus.impersonate(ids, 1)
             if lines:
                 reply = lines[0]
                 if message.channel.type != discord.ChannelType.private:
