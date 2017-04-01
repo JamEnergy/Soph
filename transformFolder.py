@@ -3,30 +3,37 @@ import os
 import sys
 from collections import defaultdict
 
-incomingDir = "incoming"
-outDir = "userData"
-try:
-    os.mkdir(outDir)
-except:
-    pass
 
-class FileHandles(dict):
-    def __missing__(self, key):
-        self[key] = open(os.path.join(outDir, key), "a", encoding = "utf-8")
-        return self[key]
+def run(incomingDir, outDir):
+    try:
+        os.mkdir(outDir)
+    except:
+        pass
 
-outfhs = FileHandles()
+    class FileHandles(dict):
+        def __missing__(self, key):
+            self[key] = open(os.path.join(outDir, key), "a", encoding = "utf-8")
+            return self[key]
 
-for file in os.listdir(incomingDir):
-    path = os.path.join(incomingDir, file)
-    infh = open(path, encoding="utf-8")
-    for line in infh:
-        doc = json.loads(line)
-        outfh = outfhs[doc["user"]]
-        outfh.write(doc["content"])
-        outfh.write("\n")
+    outfhs = FileHandles()
 
-    for uid,fh in outfhs.items():
-        fh.flush()
+    for file in os.listdir(incomingDir):
+        path = os.path.join(incomingDir, file)
+        infh = open(path, encoding="utf-8")
+        for line in infh:
+            doc = json.loads(line)
+            outfh = outfhs[doc["user"]]
+            outfh.write(doc["content"])
+            outfh.write("\n")
 
-print ("Finished")
+        for uid,fh in outfhs.items():
+            fh.flush()
+
+    print ("Finished")
+
+if __name__ == "__main__":
+    
+    incomingDir = "incoming"
+    outDir = "userData"
+
+    run(incomingDir, outDir)
