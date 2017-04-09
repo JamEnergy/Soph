@@ -85,7 +85,18 @@ class Index:
         self.stopping = False
         if start:
             self.startIndexer()
-            
+        self.counts = {}
+
+    def getCounts(self, uid):
+        if uid in self.counts:
+            return self.counts[uid]
+        else:
+            with self.getSearcher() as searcher:
+                userNode = whoosh.query.Term("user", uid) # userId in the user field
+                
+                results = searcher.search(userNode)
+                self.counts[uid] = len(results)
+                return len(results)
     def startIndexer(self):
         self.indexer.start()
         self.stopping = False
@@ -278,11 +289,10 @@ class Index:
                         if user:
                             userNode = whoosh.query.Term("user", user)
                             userNodes.append(userNode)
-                        else:
-                            if userNames:
-                                q2 = nonExpandQP.parse(" OR " .join(userNames))
-                                q2.field = "content"
-                                userNodes.append(q2)
+                        if userNames:
+                            q2 = nonExpandQP.parse(" OR " .join(userNames))
+                            q2.field = "content"
+                            userNodes.append(q2)
                         q = textNode
                         if userNodes:
                             u = whoosh.query.Or(userNodes)

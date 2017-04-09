@@ -1,19 +1,21 @@
 import spacy
 from spacy.symbols import nsubj, VERB
 from timer import * 
-nlp = None
+from nlp import nlp
+
+def hasChildInSet(tok, objSet):
+    try:
+        for c in tok.children:
+            if c.lemma_ in objSet:
+                return True
+    except:
+        return False
+    return False
 
 def pipe(texts, batch_size=10, n_threads = 4):
-    global nlp
-    if not nlp:
-        nlp = spacy.load('en')
-
     return nlp.pipe(texts)
 
 def isSame(text1, text2):
-    global nlp
-    if not nlp:
-        nlp = spacy.load('en')
     try:
         iter1 = nlp(text1)
         iter2 = nlp(text2)
@@ -29,21 +31,19 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
     return checkVerbFull(text, subjects, verb, want_bool, timer, subj_i = (not name))
 
 def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = False):
-    """ subj_i: if True, allow 'i' as a subject """
-    global nlp
-    if not nlp:
-        nlp = spacy.load('en')
-    
+    """ subj_i: if True, allow 'i' as a subject """    
     output = {}
-    
-    iter = nlp(verb)
-    verb = iter[0]
-    require_object = len(iter) > 1 or not want_bool
-    objects = []
-    if require_object and len(iter) > 1:
-        for word in iter[1:]:
-            objects.append(word.lemma_)
-    objects = set(objects)
+    require_object = False
+    objects = set([])
+    if verb:
+        iter = nlp(verb)
+        verb = iter[0]
+        require_object = len(iter) > 1 or not want_bool
+        
+        if require_object and len(iter) > 1:
+            for word in iter[1:]:
+                objects.add(word.lemma_)
+        objects = set(objects)
 
     if subjects:
         subjects = set ([name.lower().strip() for name in subjects])
@@ -62,7 +62,7 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
         verbs = set()
         for possible_subject in doc:
             if possible_subject.dep == nsubj and possible_subject.head.pos == VERB:
-                if possible_subject.head.lemma_ == verb.lemma_:
+                if not verb or possible_subject.head.lemma_ == verb.lemma_:
                     verbs.add(possible_subject.head)
 
         # verbs with the correct things on the RHS?
@@ -79,18 +79,18 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
                         break
                     elif objects and list(v.rights):
                         for r in v.rights:
-                            if r.lemma_ in objects:
+                            if r.lemma_ in objects or hasChildInSet(r, objects):
                                 filtered_verbs.append(v)
                                 has_subj = True
                                 break                        
                     elif require_object and list(v.rights):
                         for r in v.rights:
-                            if r.pos_ == "NOUN":
+                            if r.pos_ == "NOUN" or "obj" in r.dep_:
                                 filtered_verbs.append(v)
                                 has_subj = True
                                 break
-            if not has_subj:
-                if v.text.endswith("ed"):
+            if (not has_subj) and subj_i: # TODO - this is too generous, ie, need to filter on not objects/require_object
+                if v.text.endswith("ed") and v.dep_ == "ROOT":
                     filtered_verbs.append(v)
 
         for v in filtered_verbs:
@@ -108,9 +108,6 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
 
 def filter(results, keyword, max = 100):
     """ filters out results where the keyword isn't the subject?"""
-    global nlp
-    if not nlp:
-        nlp = spacy.load('en')
     keyLemmas = set([w.lemma_ for w in nlp(keyword)])
 
     ret = []

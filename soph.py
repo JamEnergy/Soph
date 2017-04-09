@@ -1,4 +1,6 @@
 from sophLogger import SophLogger as logger
+import collections
+import question
 import reloader
 import itertools
 import json
@@ -14,6 +16,7 @@ import subject
 import sys
 from timer import Timer,NoTimer
 import traceback
+import textEngine
 import timeutils
 import utils
 
@@ -85,7 +88,7 @@ class Soph:
     async def getUserId(self, name):
         return self.userNameCache.get(name, None)
     
-    async def getUserName(self, uid, server = None):
+    async def getUserName(self, uid):
         if uid in self.userCache:
             return self.userCache[uid]
 
@@ -115,6 +118,7 @@ class Soph:
         self.userCache = {} #userId to userName
         self.userCacheTime = 0
         self.userNameCache = {} # userName to userId
+        self.aliases = {}
         self.options = Soph.defaultOpts
         try:
             with open("options.json") as f:
@@ -124,10 +128,17 @@ class Soph:
             pass
         self.client = None
         self.corpus = corpus
+        self.qp = question.QuestionParser()
 
         def loadMarkov(key):
             return markov.Corpus(os.path.join("data", str(key), "markovData"))
         self.markovs = utils.SophDefaultDict(loadMarkov)
+
+        def loadTE(key):
+            opts = { "dir": os.path.join("data", str(key), "index") }
+            return textEngine.TextEngine(opts)
+
+        self.textEngines = utils.SophDefaultDict(loadTE)
 
         def cb(key):
             return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
@@ -158,10 +169,58 @@ class Soph:
                             (StartsWithChecker("set alias"), Soph.setAlias),
                             (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (StartsWithChecker("set"), Soph.setOption),
+                            (StartsWithChecker("parse"), Soph.parse),
+                            (StartsWithChecker("testTextEngine"), Soph.testTextEngine),
+                            (StartsWithChecker("tte"), Soph.testTextEngine),
                             (StartsWithChecker("help"), Soph.help)] 
+
+    
     def getIndex(self, serverId):
         return self.indexes[serverId]
 
+    
+    async def testTextEngine(self, prefix, suffix, message, timer=NoTimer()):
+        te = self.textEngines[message.server.id]
+            
+        un = {}
+        aliasMap = utils.SophDefaultDict(lambda x:list())
+        for k,v in self.aliases.items():
+            aliasMap[v].append(k)
+
+        if hasattr(message, "server"):
+            for m in message.server.members:
+                un[m.display_name] = m.id
+                un[m.name] = m.id
+                for alias in aliasMap[m.id]:
+                    un[alias] = m.id
+
+        results = te.answer(suffix, un)
+        lines = []
+        if not results:
+            return "I couldn't get an answer for that..."
+        for r in results:
+            name = await self.resolveId(r[0])
+            content = r[1].replace("\n", "\n\t")
+            lines.append("{0}: {1}".format(name, content))
+        return "\n".join(lines)
+
+    async def parse(self, prefix, suffix, message, timer=NoTimer()):
+        import question
+        un = {}
+        aliasMap = utils.SophDefaultDict(list)
+        for k,v in self.aliases.items():
+            aliasMap[v].append(k)
+
+        if hasattr(message, "server"):
+            for m in message.server.members:
+                un[m.display_name] = m.id
+                un[m.name] = m.id
+                for alias in aliasMap[m.id]:
+                    un[alias] = m.id
+
+        un.update(self.aliases)
+        pq = self.qp.parse(suffix, un)
+        return pq.string()
 
     async def setAlias(self, prefix, suffix, message, timer=NoTimer()):
         if message.author.id != Soph.master_id:
@@ -189,6 +248,7 @@ class Soph:
             return "{0} is already called {1} :/".format(canonicalName, newName)
 
         self.userNameCache[newName] = self.userNameCache[existingName]
+        self.aliases[newName] = self.userNameCache[existingName]
 
         aliases = {}
         if os.path.exists(Soph.aliasPath):
@@ -204,9 +264,9 @@ class Soph:
         # map of names->ids
         if os.path.exists(Soph.aliasPath):
             with open(Soph.aliasPath) as f:
-                aliases = json.loads(f.read())
+                self.aliases = json.loads(f.read())
 
-                for k,v in aliases.items():
+                for k,v in self.aliases.items():
                     self.userNameCache[k] = v
     
     def loadTz(self):
@@ -421,7 +481,12 @@ class Soph:
                 results = results[:10]
             if not results:
                 return "No one, apparently, {0}".format(fromUser)
-            return "\n".join(["{0}: {1}".format(userIds.get(v[1], "?"), v[0]) for v in results])
+            lines = []
+            lines.append("{0:<18}: {1:<6} \t[{2}]".format("user", "count", "freq/1000 lines"))
+            for v in results:                 
+                name = await self.resolveId(v[1])
+                lines.append("{0:<18}: {1:<6} \t[{2:.1f}]".format(name, v[0], 1000*v[0]/index.getCounts(v[1])))
+            return "```" + "\n".join(lines) + "```"
 
     async def respondMentions(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
@@ -607,21 +672,25 @@ class Soph:
             reply = await self.stripMentions(payload, server)
             return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
+    async def resolveId(self, id, server = None):
+        name = "?"
+        try:
+            name = await self.getUserName(id)
+            if not name:
+                if server:
+                    info = discord.utils.find(lambda x: x.id == id, server.roles)
+                else:
+                    info = await self.client.get_user_info(id)
+                name = getattr(info, "display_name", getattr(info, "name", g_Lann))
+        except:
+            pass        
+        return name
+
     async def stripMentions(self, text, server = None):
         it = re.finditer("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
         for matches in it:
             for m in matches.groups():
-                name = "?"
-                try:
-                    name = await self.getUserName(m, server)
-                    if not name:
-                        if server:
-                            info = discord.utils.find(lambda x: x.id == m, server.roles)
-                        else:
-                            info = await self.client.get_user_info(m)
-                        name = getattr(info, "display_name", getattr(info, "name", g_Lann))
-                except:
-                    pass
+                name = await self.resolveId(m, server)
                 if name:
                     text = re.sub("<?@[!&]*"+m+">", "@"+name, text)
         return text
