@@ -92,12 +92,15 @@ class Soph:
         if uid in self.userCache:
             return self.userCache[uid]
 
-        info = await self.client.get_user_info(uid)
-        if info:
-            name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
-            self.userCache[uid] = name
-            self.userNameCache[name] =uid
-            return name
+        try:
+            info = await self.client.get_user_info(uid)
+            if info:
+                name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
+                self.userCache[uid] = name
+                self.userNameCache[name] =uid
+                return name
+        except:
+            pass # probably wasn't a user
         
         return None
 
