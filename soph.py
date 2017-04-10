@@ -201,7 +201,7 @@ class Soph:
         for r in results:
             name = await self.resolveId(r[0])
             content = r[1].replace("\n", "\n\t")
-            content = await self.stripMentions(content)
+            content = await self.stripMentions(content, message.server)
             lines.append("{0}: {1}".format(name, content))
         return "\n".join(lines)
 
@@ -682,7 +682,7 @@ class Soph:
                     info = discord.utils.find(lambda x: x.id == id, server.roles)
                 else:
                     info = await self.client.get_user_info(id)
-                name = getattr(info, "display_name", getattr(info, "name", g_Lann))
+                name = getattr(info, "display_name", getattr(info, "name", "?"))
         except:
             pass        
         return name
