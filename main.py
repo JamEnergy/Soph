@@ -16,6 +16,10 @@ async def on_ready():
     print('Logged in as')
     print(client.user.name)
     print(client.user.id)
+
+    master_info = await client.get_user_info(soph.Soph.master_id)
+    await client.send_message(master_info, "I'm ready")
+
     #await client.change_presence(game = discord.Game(name="with your chat data"))
     print('------')
 

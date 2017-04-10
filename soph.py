@@ -201,6 +201,7 @@ class Soph:
         for r in results:
             name = await self.resolveId(r[0])
             content = r[1].replace("\n", "\n\t")
+            content = await self.stripMentions(content)
             lines.append("{0}: {1}".format(name, content))
         return "\n".join(lines)
 
