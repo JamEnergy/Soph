@@ -275,8 +275,8 @@ class QuestionParser:
 
 if __name__ == "__main__":
     qp = DumbQuestionParser()
-    users = {"Marta":1, "Chaeldar":1, "Lisa":2, "Lux":3}
-    texts = ["who is gay?",
+    users = {"Marta":1, "Chaeldar":1, "Lisa":2, "Lux":3, "Jerka":4}
+    texts = ["what does Jerka think?",
             "is Lux noob?",
              "is Lux pro?",
              "is Lux a noob?",

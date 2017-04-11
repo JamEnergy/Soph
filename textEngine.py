@@ -60,7 +60,7 @@ class TextEngine:
         if pq.verb:
             if pq.verb.lemma_ == "say":
                 doFilter=False
-            elif pq.verb.lemma_ == "think":
+            elif pq.verb.lemma_ == "think" and pq.objects:
                 objectIsSubject = True
             else:
                 predicates.add(pq.verb.text)
