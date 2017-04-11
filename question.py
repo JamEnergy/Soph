@@ -115,16 +115,16 @@ class DumbQuestionParser:
                 if word.text == replName:
                     nameToken = word
                     verbIsNext = True
-                elif word.pos == VERB and i > 0:
+                elif word.pos == VERB and (i > 0 or (i == 0 and word.lemma_ == 'be')):
                     if not mainVerb or mainVerb.dep_ == "aux":
                         mainVerb = word
                 i += 1
 
             if mainVerb:
                 if mainVerb.idx < nameToken.idx: # main verb is before name... what?
-                    nameTokenn = None
+                    nameToken = None
 
-                if mainVerb.idx > nameToken.idx: # normal casce
+                if nameToken and mainVerb.idx > nameToken.idx: # normal casce
                     ret.subject_type = SubjectTypes.User
                     ret.subject_val = user
                     foundSubject = True
@@ -133,25 +133,39 @@ class DumbQuestionParser:
             cleanQuestion = question # reset the question, kill the repl shit
             it = self.nlp(cleanQuestion)                    
 
-        qwords = set(["who", "what", "how", "when", "where"])
+        qwords = set(["who", "what", "how", "when", "where", "be"])
         i = 0
         subjectIsNext = False
         backupObjects = set()
         passedMainVerb = False
 
-        
-
-        for word in it:
-            if word.pos == 94: # punct
+        for i,word in enumerate(it):
+            if word.pos == 94 or word.pos == 87: # punct or determiner
                 continue
 
             if i == 0:
                 if word.lemma_ in qwords:
                     ret.question_word = word
+                if word.lemma_ == 'be':
+                    mainVerb = word
+                    continue
+            if i == 1 and mainVerb and mainVerb.lemma_ == 'be': # is X object
+                if word.text in users:
+                        ret.subject_type = SubjectTypes.User
+                        ret.subject_val = word.text
+                        foundSubject = True
+                        continue
             if i > 0 and i < 3:
-                if not ret.subject_type and  "sub" in word.dep_:
+                if not ret.subject_type and  ("sub" in word.dep_):
                     if word.lemma_ == "we":
                         ret.subject_type = SubjectTypes.We
+                        foundSubject = True
+                        continue 
+                    elif word.text in users:
+                        ret.subject_type = SubjectTypes.User
+                        ret.subject_val = word.text
+                        foundSubject = True
+                        continue
             if i > 2:
                 if word.dep_ in ["pobj", "dobj", "npadvmod"]:
                     ret.objects.add(word)
@@ -163,7 +177,6 @@ class DumbQuestionParser:
                     backupObjects = set()
             if mainVerb and word.idx > mainVerb.idx and word.is_alpha:
                 backupObjects.add(word)
-            i += 1
 
         if backupObjects and not ret.objects:
             ret.objects = set(backupObjects)
@@ -262,9 +275,11 @@ class QuestionParser:
 
 if __name__ == "__main__":
     qp = DumbQuestionParser()
-    users = {"Marta":1, "Chaeldar":1, "Lisa":2}
-    texts = ["who eats pizza?",
-             "who does talk about Lisa?",
+    users = {"Marta":1, "Chaeldar":1, "Lisa":2, "Lux":3}
+    texts = ["who is gay?",
+            "is Lux noob?",
+             "is Lux pro?",
+             "is Lux a noob?",
              "who talks about dog?",
              "who talks about Lisa?",
              "who mentions Lisa?",
@@ -285,10 +300,10 @@ if __name__ == "__main__":
              "who drinks?",
              "who drinks Lisa?" ]
 
-    texts2 = [ "what do we play?", "does Marta like Nexon?", "does Marta like nexon?", "does Marta like?", "what does Marta like?"]
+    texts2 = [ "who is gay?", "what do we play?", "does Marta like Nexon?", "does Marta like nexon?", "does Marta like?", "what does Marta like?"]
 
     while True:          
-        for text in texts2:
+        for text in texts:
             #text = input("Ask a question:\n")
             try:
                 if text:

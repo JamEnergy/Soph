@@ -23,6 +23,7 @@ class TextEngine:
         self.options = opts
         self.dir = opts.get("dir", "index")
         self.start = opts.get("startIndexing", False)
+        self.maxResults = int(opts.get("maxResults", 150))
         self.index = index.Index(self.dir, start = self.start)
         self.qp = question.DumbQuestionParser()     
     
@@ -45,6 +46,7 @@ class TextEngine:
         if pq.subject_type == question.SubjectTypes.User:
             restrictUser = users[pq.subject_val]
             thisUserNames = [re.escape(k) for k,v in users.items() if v == restrictUser]
+            thisUserNames.append(restrictUser)
 
         if pq.subject_type == question.SubjectTypes.We:
             #thisUserNames = [k for k,v in users.items()]
@@ -76,7 +78,7 @@ class TextEngine:
         searchtext = " AND ".join(predicates)
 
         with timer.sub_timer("combined-query") as t:
-            res = self.index.query(searchtext, 100, restrictUser, expand=True, userNames=thisUserNames, dedupe=True, timer=t)
+            res = self.index.query(searchtext, self.maxResults, restrictUser, expand=True, userNames=thisUserNames, dedupe=True, timer=t)
             
         want_bool = False
         any_subj = False
@@ -111,7 +113,7 @@ class TextEngine:
                     if not doFilter:
                         filteredResults.append(r)
                         continue
-                    doc = r[1]
+                    doc = stripMentions(r[1], users)
                     allow_i = False
                     if (pq.subject_type == question.SubjectTypes.We or any_subj) and not objectIsSubject:
                         allow_i = True
