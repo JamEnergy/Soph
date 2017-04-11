@@ -2,7 +2,7 @@ import re
 import random
 import json
 
-pat = r"(hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
+pat = r"(((good )?(morning|nighty?))|hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
 
 pat = re.compile(pat, re.IGNORECASE)
 emoji = []
