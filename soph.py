@@ -1,4 +1,6 @@
 from sophLogger import SophLogger as logger
+import random
+import greeter
 import collections
 import question
 import reloader
@@ -644,14 +646,29 @@ class Soph:
             return None
         
         with Timer("full_request") as t:
-            if self.options["timehelp"] and message.channel.type != discord.ChannelType.private:
+            if message.channel.type != discord.ChannelType.private:
                 server = message.server
+
                 opts = self.serverOpts.get(server.id, {})
-                thc = opts.get("timeHelpChannels", {})
-                if thc.get(message.channel.name, False):
-                    resp = await self.respondTime(message)
-                    if resp:
-                        return resp
+
+                if self.options["timehelp"]:
+                    thc = opts.get("timeHelpChannels", {})
+                    if thc.get(message.channel.name, False):
+                        resp = await self.respondTime(message)
+                        if resp:
+                            return resp
+                if message.channel.name in opts.get("greetChannels", {}):
+                    if greeter.checkGreeting(message.content):
+                        master_info = await self.client.get_user_info(Soph.master_id)
+                        await self.client.add_reaction(message, "👋")
+                        while random.randint(0,10) > 4:
+                            e = greeter.randomEmoji()
+                            try:
+                                await self.client.add_reaction(message, e)
+                            except:
+                                break
+                        
+
             
             response = await self.consumeInternal(message, timer=t)
             now = int(time.time())
