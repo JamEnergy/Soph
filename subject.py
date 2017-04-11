@@ -1,9 +1,10 @@
 import spacy
 from spacy.symbols import nsubj, VERB
 from timer import * 
-from nlp import nlp
+from nlp import get
 
 def hasChildInSet(tok, objSet):
+    nlp = get()
     try:
         for c in tok.children:
             if c.lemma_ in objSet:
@@ -13,10 +14,12 @@ def hasChildInSet(tok, objSet):
     return False
 
 def pipe(texts, batch_size=10, n_threads = 4):
-    return nlp.pipe(texts)
+    nlp = get()
+    return get().pipe(texts)
 
 def isSame(text1, text2):
     try:
+        nlp = get()
         iter1 = nlp(text1)
         iter2 = nlp(text2)
 
@@ -32,6 +35,7 @@ def checkVerb(text, name, verb, want_bool, timer=NoTimer()):
 
 def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = False):
     """ subj_i: if True, allow 'i' as a subject """    
+    nlp = get()
     output = {}
     require_object = False
     objects = set([])
@@ -108,6 +112,8 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
 
 def filter(results, keyword, max = 100):
     """ filters out results where the keyword isn't the subject?"""
+    nlp = get()
+
     keyLemmas = set([w.lemma_ for w in nlp(keyword)])
 
     ret = []

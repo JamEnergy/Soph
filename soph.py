@@ -116,7 +116,8 @@ class Soph:
             self.userCacheTime = time.time()
         return self.userCache
 
-    def __init__(self, corpus = None):
+    def __init__(self, corpus = None, client = None):
+        self.client = client
         self.log = logger("Soph.log")
         self.userCache = {} #userId to userName
         self.userCacheTime = 0
@@ -129,7 +130,7 @@ class Soph:
                 self.options.update(opts)
         except:
             pass
-        self.client = None
+        
         self.corpus = corpus
         self.qp = question.QuestionParser()
 
@@ -145,14 +146,14 @@ class Soph:
 
         def cb(key):
             return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
-        self.indexes = utils.SophDefaultDict(cb )
+        self.indexes = utils.SophDefaultDict(cb)
         
         self.lastReply = 0
         self.userIds = None
-        self.loadUsers()
-        self.loadAliases()
+
         self.tz = {} # map of uid -> timezone
-        self.loadTz()
+        self.serverOpts = {} # keyed by server name
+        self.serverMap = {}
         self.lastFrom = ""
         self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
         # callback checkers should return -1 for "not this action" or offset of payload
@@ -176,8 +177,26 @@ class Soph:
                             (StartsWithChecker("testTextEngine"), Soph.testTextEngine),
                             (StartsWithChecker("tte"), Soph.testTextEngine),
                             (StartsWithChecker("help"), Soph.help)] 
+        if self.client.is_logged_in:
+            self.onReady()
 
-    
+    def onReady(self):
+        self.loadUsers()
+        self.loadAliases()
+        self.loadTz()
+
+        for server in self.client.servers or {}:
+            self.serverMap[server.name] = server.id
+
+        if "servers" in self.options:
+            for server_opts in self.options["servers"]:
+                try:
+                    id = server_opts["id"]
+                except:
+                    name = server_opts.get("name")
+                    id = self.serverMap[name]
+                self.serverOpts[id] = server_opts
+     
     def getIndex(self, serverId):
         return self.indexes[serverId]
 
@@ -594,9 +613,6 @@ class Soph:
             self.log (e)
             return g_Lann
 
-    def setClient(self, _client):
-        self.client = _client 
-
     async def respondTime(self, message):
         """ returns None if this wasn't a 'time' thing """
         uid = message.author.id
@@ -628,8 +644,11 @@ class Soph:
             return None
         
         with Timer("full_request") as t:
-            if self.options["timehelp"]:
-                if message.channel.name == "numanuma"  or message.channel.name == "botchannel":
+            if self.options["timehelp"] and message.channel.type != discord.ChannelType.private:
+                server = message.server
+                opts = self.serverOpts.get(server.id, {})
+                thc = opts.get("timeHelpChannels", {})
+                if thc.get(message.channel.name, False):
                     resp = await self.respondTime(message)
                     if resp:
                         return resp

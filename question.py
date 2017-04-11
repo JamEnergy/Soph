@@ -1,5 +1,5 @@
 import spacy
-import nlp
+from nlp import get
 import re
 from spacy.symbols import nsubj, VERB
 from enum import Enum
@@ -72,7 +72,7 @@ class DumbQuestionParser:
     replNames = ["John", "James", "Paula", 'Aleksandr', 'Ayrton', 'Iverson']
 
     def __init__(self):
-        self.nlp = nlp.nlp
+        self.nlp = get()
 
     def parse(self, question, users):
         """ users should be a dict of userName -> id """
@@ -194,7 +194,7 @@ class QuestionParser:
     replNames = ["John", "James", "Paula", 'Aleksandr', 'Ayrton', 'Iverson']
 
     def __init__(self):
-        self.nlp = nlp.nlp
+        self.nlp = get()
 
     def parse(self, question, users):
         """ users should be a dict of userName -> id """

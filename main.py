@@ -7,8 +7,7 @@ import asyncio
 import traceback
 
 client = discord.Client()
-my_soph = soph.Soph()
-my_soph.setClient(client)
+my_soph = soph.Soph(client=client)
 tok = open("token.dat").read()
 
 @client.event
@@ -22,14 +21,15 @@ async def on_ready():
 
     #await client.change_presence(game = discord.Game(name="with your chat data"))
     print('------')
+    global my_soph
+    my_soph.onReady()
 
 @client.event
 async def on_message(message):
     try:
         global my_soph
         if reloader.reload(soph, "soph.py"):
-            my_soph = soph.Soph(my_soph.corpus)
-            my_soph.setClient(client)
+            my_soph = soph.Soph(my_soph.corpus, client = client)
         response = await my_soph.consume(message)
         if response:
             await client.send_message(message.channel, response[0:1000])
