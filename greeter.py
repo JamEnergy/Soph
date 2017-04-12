@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
+
 import re
 import random
 import json
 
 pat = r"(((good )?(morning|nighty?))|hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
+
+helloEmojis = set(['<:hello:230475328265519104>', '??'])
 
 pat = re.compile(pat, re.IGNORECASE)
 emoji = []
@@ -20,6 +24,8 @@ def randomEmoji():
 
 def checkGreeting(text):
     text = text.strip()
+    if text in helloEmojis:
+        return True
     m = pat.match(text)
     if m:
         return True
