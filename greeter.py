@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-
 import re
 import random
 import json
 
 pat = r"(((good )?(morning|nighty?))|hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
-with open("inputemoji", encoding = "utf-8") as f:
-    helloEmojis = set(json.loads(f.read()))
+with open("inputemoji.json", encoding="utf-8") as f:
+    emojis = f.read()
+    emojis = json.loads(emojis)
+    helloEmojis = set()
 helloEmojis.update(set(['<:hello:230475328265519104>']))
 
 pat = re.compile(pat, re.IGNORECASE)
