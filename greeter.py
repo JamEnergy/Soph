@@ -5,8 +5,9 @@ import random
 import json
 
 pat = r"(((good )?(morning|nighty?))|hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
-
-helloEmojis = set(['<:hello:230475328265519104>', '??'])
+with open("inputemoji", encoding = "utf-8") as f:
+    helloEmojis = set(json.loads(f.read()))
+helloEmojis.update(set(['<:hello:230475328265519104>']))
 
 pat = re.compile(pat, re.IGNORECASE)
 emoji = []
