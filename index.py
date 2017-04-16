@@ -97,6 +97,16 @@ class Index:
                 results = searcher.search(userNode)
                 self.counts[uid] = len(results)
                 return len(results)
+
+    def getLast(self, uid, number):
+        with self.getSearcher() as searcher:
+            userNode = whoosh.query.Term("user", uid) # userId in the user field
+                
+            results = searcher.search(userNode, 
+                                      #sortedby="time", 
+                                      limit=number)
+            return deduper(results, dedupe = True)
+
     def startIndexer(self):
         self.indexer.start()
         self.stopping = False
@@ -302,12 +312,65 @@ class Index:
                         results = searcher.search(q, limit=max)
 
                     return deduper(results, dedupe=dedupe)
+    def terms(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):
+        ret = []
+        totalCounts = {u:self.getCounts(u) for u in usernames}
+        num = re.compile(r"^\d+$")
+        reader = self.ix.reader()
+        for t in reader.field_terms("content"):
+            if num.match(t):
+                continue
+            if len(t) < 3:
+                continue
+            freq = reader.doc_frequency("content", t)
+            if freq > 20:
+              #  print("{0}: {1}".format(t, freq))
+                with self.getSearcher() as s:
+                    q = whoosh.query.Term("content", t)
+                    uq = whoosh.query.Or([whoosh.query.Term("user", u) for u in usernames])
+                    qry = whoosh.query.And([q, uq])
+                    res = s.search(qry, groupedby="user")
+                    res.estimated_length()
+                    d = res.groups("user")
+                    for u,ary in d.items():
+                        if len(ary) > corpusThresh * freq:
+                            score = 1000000* len(ary) / totalCounts[u] / freq
+                            if score > minScore:
+                                ret.append((u, t, score))
+                                break
+        return ret
 
 if __name__ == "__main__":
-    index = Index("./mainIndex")
+    index = Index("./data/196373421834240000/index", start = False)
+    with open("authors", encoding="utf-8") as f:
+        userNames = json.loads( f.read())
 
+    userIdNames = {v:k for k,v in userNames.items()}
+
+    terms = index.terms({"182074044772909056": "Ina"}, corpusThresh = 0, corpusNorm=True, minScore = 0)
+    userTerms = defaultdict(list)
+    for t in terms:
+        userTerms[t[0]].append(t)
+    with open("terms.out", "w") as of:
+        for uid,t in userTerms.items():
+            t = sorted(t, key=lambda x:-x[2])
+            try:
+                of.write("Important words for {0}:\n".format(userNames.get(uid, "?")))
+            except:
+                continue
+            for tup in t:
+                try:
+                    of.write("\t{0} (score: {1})".format(tup[1], int(tup[2])))
+                    of.write("\n")
+                except:
+                    pass
     while True:
         query = input("query:")
         results = index.query(query)
-        for r in results:
-            print(r)
+        for i,r in enumerate(results):
+            try:
+                if i > 10:
+                    break
+                print(r)
+            except:
+                pass

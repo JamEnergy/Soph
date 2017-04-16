@@ -1,4 +1,5 @@
 from sophLogger import SophLogger as logger
+import sentiment
 import random
 import greeter
 import collections
@@ -124,7 +125,7 @@ class Soph:
         self.userCache = {} #userId to userName
         self.userCacheTime = 0
         self.userNameCache = {} # userName to userId
-        self.aliases = {}
+        self.aliases = {} # map of un -> uid
         self.options = Soph.defaultOpts
         try:
             with open("options.json") as f:
@@ -161,6 +162,7 @@ class Soph:
         # callback checkers should return -1 for "not this action" or offset of payload
         self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
                             (StartsWithChecker("who said"), Soph.respondQueryStats),
+                            (StartsWithChecker("analyze"), Soph.respondSentimentUser),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
                             (StartsWithChecker("impersonate"), Soph.respondImpersonate),
                             (StartsWithChecker("what did we say about"), Soph.respondWhoSaid),
@@ -493,6 +495,58 @@ class Soph:
 
         return ret
 
+    async def respondSentimentUser(self, prefix, suffix, message, timer=NoTimer()):
+
+        ret =[]
+        
+        unMap = {}
+        aliasMap = utils.SophDefaultDict(lambda x:list())
+        for k,v in self.aliases.items():
+            aliasMap[v].append(k)
+
+        if hasattr(message, "server"):
+            for m in message.server.members:
+                unMap[m.display_name] = m.id
+                unMap[m.name] = m.id
+                for alias in aliasMap[m.id]:
+                    unMap[alias] = m.id
+
+        for un,uid in unMap.items():
+            if suffix.startswith(un):
+                suffix = suffix[len(un):]
+                suffix = suffix.strip()
+                if suffix.startswith("on "):
+                    suffix = suffix[3:]
+
+                index = self.getIndex(message.server.id)
+                if suffix:
+                    results = index.query(suffix, max=50, user = uid, expand = True, dedupe=True)
+                else:
+                    results = index.getLast(uid, 50)
+
+                contents = [r[1] for r in results]
+                scores = sentiment.analyze(contents)
+                for idx, score in enumerate(scores):
+                    content = contents[idx]
+                    score = score["aggregate"]["score"]
+                    mag = abs(score)
+                    if mag > 0.4:
+                        ret.append((content, score))
+                break
+        if not ret:
+            res = sentiment.analyze(suffix)
+            agg = res[0]["aggregate"]
+            return "Sounds {0} ({1:.2f})".format(agg["sentiment"], agg["score"])
+        else:
+            lines = []
+            for r in ret[0:10]:
+                if r[1] > 0:
+                    sign = ":grinning:"
+                else:
+                    sign = ":slight_frown:"
+                lines.append("{0}: {1} ({2:.2f})".format(r[0], sign, r[1]))
+            return "\n".join(lines)
+
     async def respondQueryStats(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("query-stats-callback") as t:
             fromUser = message.author.display_name
@@ -668,8 +722,6 @@ class Soph:
                             except:
                                 break
                         
-
-            
             response = await self.consumeInternal(message, timer=t)
             now = int(time.time())
             

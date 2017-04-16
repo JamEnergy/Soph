@@ -3,7 +3,18 @@ import re
 import random
 import json
 
-pat = r"(((good )?(morning|nighty?))|hi+|h?ello+|heya?)\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$"
+helloList = [r"((good )?(morning|nighty?))",
+r"hi+",
+r"h?ello+",
+r"heya?",
+r"hiya+",
+r"hai+"]
+
+hellos = "|".join(helloList)
+
+
+pat = r"({0})\b(,?\s+(team|all|cakes?|friends))?(\s*<.*>)?(\s*[^a-zA-Z]+)?$".format(hellos)
+
 with open("inputemoji.json", encoding="utf-8") as f:
     emojis = f.read()
     emojis = json.loads(emojis)
