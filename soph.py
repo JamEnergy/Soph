@@ -162,6 +162,7 @@ class Soph:
         self.serverOpts = {} # keyed by server name
         self.serverMap = {}
         self.lastFrom = ""
+        self.greeters = {}
         self.reactor = None
         self.addressPat = None 
         # callback checkers should return -1 for "not this action" or offset of payload
@@ -233,6 +234,8 @@ class Soph:
                 o["infoRegs"] = [re.compile(r) for r in regs]
 
             self.reactor = reactor.Reactor(self.serverOpts)
+        self.greeters = utils.SophDefaultDict(lambda x:greeter.Greeter(self.serverOpts.get(x,{}).get("greetings", [])))
+
         self.ready = True
      
     def getIndex(self, serverId):
@@ -761,7 +764,8 @@ class Soph:
             server = message.server
             opts = self.serverOpts.get(server.id, {})
             if message.channel.name in opts.get("greetChannels", {}):
-                if greeter.checkGreeting(message.content):
+                g = self.greeters[server.id]
+                if g.checkGreeting(message.content):
                     master_info = await self.client.get_user_info(Soph.master_id)
                     await self.client.add_reaction(message, "👋")
                     while random.randint(0,10) > 4:
