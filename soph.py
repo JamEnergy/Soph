@@ -410,7 +410,6 @@ class Soph:
         for c in cbs:
             offset = c[0](payload)
             if offset != -1:
-                self.log (message.content[0:100])
                 resp = await c[1](self, payload[:offset], payload[offset:].strip(), message, timer=timer)
                 if resp:
                     return resp
@@ -810,6 +809,7 @@ class Soph:
     async def consumeInternal(self, message, timer=NoTimer()):
         async with ScopedStatus(self.client, "with your text data") as status:
             fromUser = message.author.display_name
+            self.log (message.content[0:100])
 
             payload = re.sub(self.addressPat, "", message.content)
             server = None
