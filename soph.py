@@ -174,7 +174,9 @@ class Soph:
         self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
         # callback checkers should return -1 for "not this action" or offset of payload
         self.noPrefixCallbacks = [
-                (AlwaysCallback("reacts to certain messages"), Soph.respondReact)
+                (AlwaysCallback("reacts to certain messages"), Soph.respondReact),
+                (AlwaysCallback("converts times to UTC"), Soph.respondTimeExt),
+                (AlwaysCallback("reacts to certain greetings"), Soph.respondGreet)           
             ]
         self.callbacks = [  (StartsWithChecker("who talks about"), Soph.respondQueryStats),
                             (StartsWithChecker("who said"), Soph.respondQueryStats),
@@ -726,6 +728,41 @@ class Soph:
                     return None
             return "@{0} - what time zone?".format(message.author.display_name)
 
+    async def respondTimeExt(self, prefix, suffix, message, timer=NoTimer()):
+        try:
+            opts = self.serverOpts.get(message.server.id, {})
+
+            if self.options["timehelp"]:
+                thc = opts.get("timeHelpChannels", {})
+                if thc.get(message.channel.name, False):
+                    resp = await self.respondTime(message)
+                    if resp:
+                        return resp
+        except Exception as e:
+            pass
+        return None
+
+    async def respondGreet(self, prefix, suffix, message, timer=NoTimer()):
+        try:
+            server = message.server
+            opts = self.serverOpts.get(server.id, {})
+            if message.channel.name in opts.get("greetChannels", {}):
+                if greeter.checkGreeting(message.content):
+                    master_info = await self.client.get_user_info(Soph.master_id)
+                    await self.client.add_reaction(message, "👋")
+                    while random.randint(0,10) > 4:
+                        e = greeter.randomEmoji()
+                        try:
+                            await self.client.add_reaction(message, e)
+                        except:
+                            break
+                    else:
+                        pass
+        except Exception as e:
+            pass
+
+        return None
+
     async def consume(self, message):
         fromUser = message.author.display_name
         if message.author.id == self.client.user.id:
@@ -734,25 +771,6 @@ class Soph:
         with Timer("full_request") as t:
             if message.channel.type != discord.ChannelType.private:
                 server = message.server
-
-                opts = self.serverOpts.get(server.id, {})
-
-                if self.options["timehelp"]:
-                    thc = opts.get("timeHelpChannels", {})
-                    if thc.get(message.channel.name, False):
-                        resp = await self.respondTime(message)
-                        if resp:
-                            return resp
-                if message.channel.name in opts.get("greetChannels", {}):
-                    if greeter.checkGreeting(message.content):
-                        master_info = await self.client.get_user_info(Soph.master_id)
-                        await self.client.add_reaction(message, "👋")
-                        while random.randint(0,10) > 4:
-                            e = greeter.randomEmoji()
-                            try:
-                                await self.client.add_reaction(message, e)
-                            except:
-                                break
                         
             response = await self.consumeInternal(message, timer=t)
             now = int(time.time())
