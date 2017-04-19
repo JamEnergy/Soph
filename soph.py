@@ -170,27 +170,26 @@ class Soph:
                 (AlwaysCallback("converts times to UTC"), Soph.respondTimeExt),
                 (AlwaysCallback("reacts to certain greetings"), Soph.respondGreet)           
             ]
-        self.callbacks = [  (StartsWithChecker("who talks about"), Soph.respondQueryStats),
-                            (StartsWithChecker("who said"), Soph.respondQueryStats),
-                            (StartsWithChecker("analyze"), Soph.respondSentimentUser),
+        self.callbacks = [  (StartsWithChecker("who said"), Soph.respondQueryStats),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
+                            (StartsWithChecker("help"), Soph.help),
                             (StartsWithChecker("impersonate"), Soph.respondImpersonate),
+                            (StartsWithChecker("set alias"), Soph.setAlias),
+                            (StartsWithChecker("set locale"), Soph.setTimeZone),
+                            (AlwaysCallback("parses various simple questions"), Soph.testTextEngine),
+                            (StartsWithChecker("who talks about"), Soph.respondQueryStats),
+                            (StartsWithChecker("analyze"), Soph.respondSentimentUser),
                             (StartsWithChecker("what did we say about"), Soph.respondWhoSaid),
                             (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
-                            (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),                            
+                            (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),
                             (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
                             (SplitChecker("what does"), Soph.respondUserVerb),
                             (SplitChecker("what did"), Soph.respondUserVerb),
                             (SplitChecker("does"), Soph.respondUserVerbObject),
                             (SplitChecker("did"), Soph.respondUserVerbObject),
                             (StartsWithChecker("who"), Soph.respondWhoVerb),
-                            (StartsWithChecker("set alias"), Soph.setAlias),
-                            (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (StartsWithChecker("set"), Soph.setOption),
-                            (StartsWithChecker("parse"), Soph.parse),
-                            (StartsWithChecker("testTextEngine"), Soph.testTextEngine),
-                            (StartsWithChecker("tte"), Soph.testTextEngine),
-                            (StartsWithChecker("help"), Soph.help)] 
+                            (StartsWithChecker("parse"), Soph.parse)] 
         self.ready = False
         if self.client.is_logged_in:
             self.onReady()
@@ -255,7 +254,7 @@ class Soph:
                 for alias in aliasMap[m.id]:
                     un[alias] = m.id
 
-        results = te.answer(suffix, un)
+        results = te.answer(suffix, un, timer=timer)
         lines = []
         if not results:
             return "I couldn't get an answer for that..."
@@ -410,9 +409,12 @@ class Soph:
         for c in cbs:
             offset = c[0](payload)
             if offset != -1:
-                resp = await c[1](self, payload[:offset], payload[offset:].strip(), message, timer=timer)
-                if resp:
-                    return resp
+                try:
+                    resp = await c[1](self, payload[:offset], payload[offset:].strip(), message, timer=timer)
+                    if resp:
+                        return resp
+                except Exception as e:
+                    pass
         return None
 
     def reloadIndex(self):

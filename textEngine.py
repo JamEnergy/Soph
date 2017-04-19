@@ -3,7 +3,7 @@ import re
 import index
 import subject
 from sophLogger import SophLogger
-from timer import Timer
+from timer import Timer,NoTimer
 import question
 
 
@@ -27,13 +27,10 @@ class TextEngine:
         self.index = index.Index(self.dir, start = self.start)
         self.qp = question.DumbQuestionParser()     
     
-    #async def respondWhoVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
-    def answer(self, qtext, users = {}):
+    def answer(self, qtext, users = {}, timer=NoTimer()):
         """ Find lines that answer the question 'who verbs?'
             users should be a map of userName -> userIds
         """
-        timer = Timer("Answer")
-
         userIds = {v:k for k,v in users.items()}
 
         pq = self.qp.parse(qtext, users)
