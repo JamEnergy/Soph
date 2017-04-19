@@ -37,13 +37,13 @@ class ScopedStatus:
 
 class AlwaysCallback:
     def __init__(self, helpMsg):
-        self.help = helpMsg
+        self.helpMsg = helpMsg
 
     def __call__(self, text):
         return 0
 
     def help(self):
-        return "<always: {0}>".format(helpMsg)
+        return "<always: {0}>".format(self.helpMsg)
 
 class StartsWithChecker:
     def __init__(self, prefix):
@@ -378,6 +378,7 @@ class Soph:
         if not suffix:
             ret = "I can parse requests of the following forms:\n"
             ret += "\n".join([c[0].help() for c in self.noPrefixCallbacks])
+            ret += "\n"
             ret += "\n".join([c[0].help() for c in self.callbacks])
             return ret
         elif suffix.startswith("timezones"):
