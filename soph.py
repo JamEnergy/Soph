@@ -22,6 +22,7 @@ import traceback
 import textEngine
 import timeutils
 import utils
+import reactor
 
 class ScopedStatus:
     def __init__(self, client, text):
@@ -33,6 +34,16 @@ class ScopedStatus:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.change_presence(game = None, status=discord.Status.online)    
+
+class AlwaysCallback:
+    def __init__(self, helpMsg):
+        self.help = helpMsg
+
+    def __call__(self, text):
+        return 0
+
+    def help(self):
+        return "<always: {0}>".format(helpMsg)
 
 class StartsWithChecker:
     def __init__(self, prefix):
@@ -128,10 +139,11 @@ class Soph:
         self.aliases = {} # map of un -> uid
         self.options = Soph.defaultOpts
         try:
-            with open("options.json") as f:
-                opts = json.loads(f.read())
+            with open("options.json", "r", encoding="utf-8") as f:
+                opts = json.loads(f.read(), encoding = "utf-8")
                 self.options.update(opts)
-        except:
+        except Exception as e:
+            self.log("Crap: {0}".format(e))
             pass
         
         self.corpus = corpus
@@ -158,9 +170,13 @@ class Soph:
         self.serverOpts = {} # keyed by server name
         self.serverMap = {}
         self.lastFrom = ""
+        self.reactor = None
         self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
         # callback checkers should return -1 for "not this action" or offset of payload
-        self.callbacks = [(StartsWithChecker("who talks about"), Soph.respondQueryStats),
+        self.noPrefixCallbacks = [
+                (AlwaysCallback("reacts to certain messages"), Soph.respondReact)
+            ]
+        self.callbacks = [  (StartsWithChecker("who talks about"), Soph.respondQueryStats),
                             (StartsWithChecker("who said"), Soph.respondQueryStats),
                             (StartsWithChecker("analyze"), Soph.respondSentimentUser),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
@@ -204,6 +220,8 @@ class Soph:
             for k, o in self.serverOpts.items():
                 regs = o.get("infoRegs", [])
                 o["infoRegs"] = [re.compile(r) for r in regs]
+
+            self.reactor = reactor.Reactor(self.serverOpts)
      
     def getIndex(self, serverId):
         return self.indexes[serverId]
@@ -368,8 +386,13 @@ class Soph:
         return g_Lann
 
 
-    async def dispatch(self, payload, message, timer=NoTimer()):
-        for c in self.callbacks:
+    async def dispatch(self, payload, message, timer=NoTimer(), usePrefix = True):
+        if usePrefix:
+            cbs = self.callbacks
+        else:
+            cbs = self.noPrefixCallbacks
+
+        for c in cbs:
             offset = c[0](payload)
             if offset != -1:
                 self.log (message.content[0:100])
@@ -551,6 +574,11 @@ class Soph:
                 lines.append("{0}: {1} ({2:.2f})".format(r[0], sign, r[1]))
             return "\n".join(lines)
 
+    async def respondReact(self, prefix, suffix, message, timer=NoTimer()):
+        if self.reactor:
+            await self.reactor.react(message, self.client)
+        return None
+
     async def respondQueryStats(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("query-stats-callback") as t:
             fromUser = message.author.display_name
@@ -702,15 +730,6 @@ class Soph:
         fromUser = message.author.display_name
         if message.author.id == self.client.user.id:
             return None
-
-        lowerMessage = message.content.strip().lower()
-        for r in self.serverOpts[message.server.id]["infoRegs"]:
-            if r.match(lowerMessage) and lowerMessage.endswith("?"): 
-                await self.client.add_reaction(message, "🇮")
-                await self.client.add_reaction(message, "🇳")
-                await self.client.add_reaction(message, "🇫")
-                await self.client.add_reaction(message, "🇴")
-                break
             
         with Timer("full_request") as t:
             if message.channel.type != discord.ChannelType.private:
@@ -759,6 +778,10 @@ class Soph:
             server = None
             if message.channel and hasattr(message.channel ,'server'):
                 server = message.channel.server
+
+            x = await self.dispatch(payload, message, timer=timer, usePrefix = False)
+            if x:
+                return x
 
             if message.channel.type != discord.ChannelType.private:
                 if len(payload) == len(message.content):
