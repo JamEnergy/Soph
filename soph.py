@@ -200,6 +200,10 @@ class Soph:
                     name = server_opts.get("name")
                     id = self.serverMap[name]
                 self.serverOpts[id] = server_opts
+
+            for k, o in self.serverOpts.items():
+                regs = o.get("infoRegs", [])
+                o["infoRegs"] = [re.compile(r) for r in regs]
      
     def getIndex(self, serverId):
         return self.indexes[serverId]
@@ -698,7 +702,16 @@ class Soph:
         fromUser = message.author.display_name
         if message.author.id == self.client.user.id:
             return None
-        
+
+        lowerMessage = message.content.strip().lower()
+        for r in self.serverOpts[message.server.id]["infoRegs"]:
+            if r.match(lowerMessage) and lowerMessage.endswith("?"): 
+                await self.client.add_reaction(message, "🇮")
+                await self.client.add_reaction(message, "🇳")
+                await self.client.add_reaction(message, "🇫")
+                await self.client.add_reaction(message, "🇴")
+                break
+            
         with Timer("full_request") as t:
             if message.channel.type != discord.ChannelType.private:
                 server = message.server

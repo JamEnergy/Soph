@@ -340,13 +340,45 @@ class Index:
                                 break
         return ret
 
-if __name__ == "__main__":
-    index = Index("./data/196373421834240000/index", start = False)
-    with open("authors", encoding="utf-8") as f:
-        userNames = json.loads( f.read())
+    def whoMentions(self, target, names):
+        if type(names) != set:
+            names = set(names)
+        with self.getSearcher() as s:
+            q = whoosh.query.Or([whoosh.query.Term("content", n) for n in names])
+            uq = whoosh.query.Term("mentionsUsers", target)
+            qry = whoosh.query.Or([q, uq])
+            res = s.search(qry, limit=10000000)
 
+            counts = defaultdict(int)
+            for r in res:
+                counts[r["user"]] += 1
+
+            return counts
+
+    def getTimes(self, userId):
+        import whoosh.sorting
+        from datetime import datetime, timedelta
+
+        uq = whoosh.query.Term("user", userId)
+
+        end = datetime.utcnow()
+        end = datetime(end.year, end.month, end.day)
+        gap = timedelta(hours=6)
+        start = end - 180*gap
+
+        facet = whoosh.sorting.DateRangeFacet("time", start, end, gap)
+        with self.getSearcher() as s:
+            r = s.search(uq, groupedby=facet)
+
+        g = r.groups()
+
+        return g
+
+        
+
+
+def getBestTerms(index, userNames):
     userIdNames = {v:k for k,v in userNames.items()}
-
     terms = index.terms({"182074044772909056": "Ina"}, corpusThresh = 0, corpusNorm=True, minScore = 0)
     userTerms = defaultdict(list)
     for t in terms:
@@ -364,6 +396,60 @@ if __name__ == "__main__":
                     of.write("\n")
                 except:
                     pass
+days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+if __name__ == "__main__":
+    index = Index("./data/196373421834240000/index", start = False)
+    with open("authors", encoding="utf-8") as f:
+        users = json.loads( f.read())
+
+    userNames = {v:k for k,v in users.items()}
+
+    res = index.getTimes(userNames["Chaeldar"])
+    counts = [(r[0], len(vals)) for r, vals in res.items() if r]
+
+    totals = defaultdict(lambda:[0,0])
+
+    for c in counts:
+        key = c[0].weekday() + 0.25 * int(c[0].hour/6)
+        totals[key][0] += c[1]
+        totals[key][1] += 1
+
+    averages = sorted([ (k,v[0]/v[1]) for k,v in totals.items()], key = lambda x : x[0] )
+    groupedAverages = []
+    for v in averages:
+        day = int(v[0])
+        part = int((v[0] % 1) * 4)
+
+        while len(groupedAverages) <= day:
+            groupedAverages.append([0,0,0,0])
+
+        groupedAverages[day][part] = v[1]
+    print ("day       : am1, am2, pm1, pm2")
+    for i,v in enumerate(groupedAverages):
+        print("{0: <10}: {1}, {2}, {3}, {4}".format(days[i], int(v[0]), int(v[1]), int(v[2]), int(v[3])))
+
+    counts = sorted(counts, key=lambda x: x[0])
+    with open("times.dat", "w") as of:
+        for tup in counts:
+            try:
+                d = tup[0]
+                #datetime.datetime.
+                date = "{0}/{1}/{2} ({3})".format(d.day, d.month, d.year, d.weekday()+1)
+                of.write("{0}:{1}\n".format(date, tup[1]))
+            except:
+                pass
+    import sys
+    sys.exit(0)
+
+    #res = index.whoMentions(userNames["Jerka"], ["Jer", "Jerka"])
+    res = index.whoMentions(userNames["Yuna"], ["Paula", "Yuna", "Yunai"])
+
+    for u,count in res.items():
+        try:
+            print ("{0}: {1}".format( users[u], count ))
+        except:
+            pass
+
     while True:
         query = input("query:")
         results = index.query(query)
