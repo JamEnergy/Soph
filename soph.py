@@ -138,13 +138,7 @@ class Soph:
         self.userNameCache = {} # userName to userId
         self.aliases = {} # map of un -> uid
         self.options = Soph.defaultOpts
-        try:
-            with open("options.json", "r", encoding="utf-8") as f:
-                opts = json.loads(f.read(), encoding = "utf-8")
-                self.options.update(opts)
-        except Exception as e:
-            self.log("Crap: {0}".format(e))
-            pass
+        self.optTime = time.time() - 1
         
         self.corpus = corpus
         self.qp = question.QuestionParser()
@@ -159,9 +153,7 @@ class Soph:
 
         self.textEngines = utils.SophDefaultDict(loadTE)
 
-        def cb(key):
-            return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
-        self.indexes = utils.SophDefaultDict(cb)
+        self.indexes = {}
         
         self.lastReply = 0
         self.userIds = None
@@ -171,7 +163,7 @@ class Soph:
         self.serverMap = {}
         self.lastFrom = ""
         self.reactor = None
-        self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
+        self.addressPat = None 
         # callback checkers should return -1 for "not this action" or offset of payload
         self.noPrefixCallbacks = [
                 (AlwaysCallback("reacts to certain messages"), Soph.respondReact),
@@ -199,13 +191,31 @@ class Soph:
                             (StartsWithChecker("testTextEngine"), Soph.testTextEngine),
                             (StartsWithChecker("tte"), Soph.testTextEngine),
                             (StartsWithChecker("help"), Soph.help)] 
+        self.ready = False
         if self.client.is_logged_in:
             self.onReady()
 
     def onReady(self):
+        try:
+            self.options = Soph.defaultOpts
+
+            with open("options.json", "r", encoding="utf-8") as f:
+                opts = json.loads(f.read(), encoding = "utf-8")
+                self.options.update(opts)
+        except Exception as e:
+            self.log("Crap: {0}".format(e))
+            return
+        self.optTime = time.time()
+
+        def cb(key):
+            return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
+        self.indexes = utils.SophDefaultDict(cb)
+
         self.loadUsers()
         self.loadAliases()
         self.loadTz()
+
+        self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
 
         for server in self.client.servers or {}:
             self.serverMap[server.name] = server.id
@@ -224,6 +234,7 @@ class Soph:
                 o["infoRegs"] = [re.compile(r) for r in regs]
 
             self.reactor = reactor.Reactor(self.serverOpts)
+        self.ready = True
      
     def getIndex(self, serverId):
         return self.indexes[serverId]
@@ -366,6 +377,7 @@ class Soph:
         suffix = suffix.strip()
         if not suffix:
             ret = "I can parse requests of the following forms:\n"
+            ret += "\n".join([c[0].help() for c in self.noPrefixCallbacks])
             ret += "\n".join([c[0].help() for c in self.callbacks])
             return ret
         elif suffix.startswith("timezones"):
@@ -764,6 +776,12 @@ class Soph:
         return None
 
     async def consume(self, message):
+        if not self.ready:
+            return None
+
+        if os.path.getmtime("options.json") > self.optTime:
+            self.onReady()
+
         fromUser = message.author.display_name
         if message.author.id == self.client.user.id:
             return None
