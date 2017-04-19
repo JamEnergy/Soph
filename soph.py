@@ -738,7 +738,7 @@ class Soph:
                 return "{0} for {1} ({2}) is {3} UTC ({4} from now)".format(timeStr, message.author.display_name, tzStr, utcTimeStr, timeutils.offset_from_now(utcTime))
             else:
                 return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
-        if re.search(re.escape(timeStr) + r"\s*UTC", text, re.IGNORECASE):
+        if re.search(re.escape(timeStr) + r"\s*(UTC)|(server.?time)", text, re.IGNORECASE):
             utcTime = timeutils.to_utc(timeStr, "Etc/UTC")
             return "({0} UTC is {1} from now)".format(timeStr, timeutils.offset_from_now(utcTime))
 
