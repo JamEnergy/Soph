@@ -725,7 +725,9 @@ class Soph:
         uid = message.author.id
         text = await self.stripMentions(message.content)
         timeStr = timeutils.findTime(text)
-        if timeStr and ( ("my time" in text) or ("for me" in text)):
+        if not timeStr:
+            return None
+        if ("my time" in text) or ("for me" in text):
             if uid in self.tz:
                 try:
                     utcTime = timeutils.to_utc(timeStr, self.tz[uid])
@@ -736,8 +738,11 @@ class Soph:
                 return "{0} for {1} ({2}) is {3} UTC ({4} from now)".format(timeStr, message.author.display_name, tzStr, utcTimeStr, timeutils.offset_from_now(utcTime))
             else:
                 return "{0}, please register your timezone in bot channel with \"Ok Soph, set locale <Continent/City>\" ".format(message.author.display_name)
-            
-        if timeStr and not Soph.timeZonepat.search(text):
+        if re.search(re.escape(timeStr) + r"\s*UTC", text, re.IGNORECASE):
+            utcTime = timeutils.to_utc(timeStr, "Etc/UTC")
+            return "({0} UTC is {1} from now)".format(timeStr, timeutils.offset_from_now(utcTime))
+
+        if not Soph.timeZonepat.search(text):
             if uid in self.tz:
                 try:
                     utcTime = timeutils.to_utc(timeStr, self.tz[uid])
