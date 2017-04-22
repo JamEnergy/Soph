@@ -1,3 +1,4 @@
+
 import discord
 import reloader
 import sophLogger
@@ -23,6 +24,10 @@ async def on_ready():
     print('------')
     global my_soph
     my_soph.onReady()
+
+@client.event
+async def on_error(event, *args, **kwargs):
+    print("Error?")
 
 @client.event
 async def on_message(message):

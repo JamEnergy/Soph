@@ -180,7 +180,7 @@ class Index:
         def __enter__(self):
             try:
                 self.handle = self.parent.searchers.pop()
-                if (time.time() - self.handle.time) > 5:
+                if (time.time() - self.handle.time) > 60:
                     self.handle = self.handle.refresh()
                     setattr(self.handle, 'time', time.time())
                     self.parent.log("Refreshed handle")
@@ -312,18 +312,54 @@ class Index:
                         results = searcher.search(q, limit=max)
 
                     return deduper(results, dedupe=dedupe)
+
+    async def collect_terms(self, t, usernames, corpusThresh, freq, minScore):
+        with self.getSearcher() as s:
+            ret = []
+            q = whoosh.query.Term("content", t)
+            uq = whoosh.query.Or([whoosh.query.Term("user", u) for u in usernames])
+            qry = whoosh.query.And([q, uq])
+            res = s.search(qry, groupedby="user")
+            res.estimated_length()
+            d = res.groups("user")
+            for u,ary in d.items():
+                if len(ary) > corpusThresh * freq:
+                    score = 1000000* len(ary) / self.getCounts(u) / freq
+                    if score > minScore:
+                        ret.append((u, t, score))
+                        break
+            return ret
+    async def terms_async(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):
+        ret = []
+        totalCounts = {u:self.getCounts(u) for u in usernames}
+        num = re.compile(r"^\d+$")
+        reader = self.ix.reader()
+        numDocs = reader.doc_count()
+        for t in reader.field_terms("content"):
+            if num.match(t):
+                continue
+            if len(t) < 3:
+                continue
+            
+            freq = reader.doc_frequency("content", t)
+            if freq > 50 and freq < numDocs/100:
+                ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore)
+        return ret
+
     def terms(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):
         ret = []
         totalCounts = {u:self.getCounts(u) for u in usernames}
         num = re.compile(r"^\d+$")
         reader = self.ix.reader()
+        numDocs = reader.doc_count()
+
         for t in reader.field_terms("content"):
             if num.match(t):
                 continue
             if len(t) < 3:
                 continue
             freq = reader.doc_frequency("content", t)
-            if freq > 20:
+            if freq > 50 and freq < numDocs/100:
               #  print("{0}: {1}".format(t, freq))
                 with self.getSearcher() as s:
                     q = whoosh.query.Term("content", t)

@@ -1,3 +1,4 @@
+import wsClient
 from sophLogger import SophLogger as logger
 import sentiment
 import random
@@ -24,16 +25,24 @@ import timeutils
 import utils
 import reactor
 
+import termGetter
+    
 class ScopedStatus:
     def __init__(self, client, text):
         self.client = client
         self.text = text
         
     async def __aenter__(self):
-        await self.client.change_presence(game = discord.Game(name=self.text))    
+        try:
+            await self.client.change_presence(game = discord.Game(name=self.text))    
+        except:
+            pass
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self.client.change_presence(game = None, status=discord.Status.online)    
+        try:
+            await self.client.change_presence(game = None, status=discord.Status.online)    
+        except:
+            pass
 
 class AlwaysCallback:
     def __init__(self, helpMsg):
@@ -72,7 +81,7 @@ class PrefixNameSuffixChecker:
         self.pat = re.compile(patString)
 
     def __call__(self, text):
-        match = g_whatSaidPat.finditer(text)
+        match = self.pat.finditer(text)
         for m in match:
             off = m.start(1)
             return off
@@ -172,6 +181,7 @@ class Soph:
                 (AlwaysCallback("reacts to certain greetings"), Soph.respondGreet)           
             ]
         self.callbacks = [  (StartsWithChecker("who said"), Soph.respondQueryStats),
+                            (PrefixNameSuffixChecker("what does", "talk about"), Soph.respondUserTerms),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
                             (StartsWithChecker("help"), Soph.help),
                             (StartsWithChecker("impersonate"), Soph.respondImpersonate),
@@ -417,7 +427,7 @@ class Soph:
                     if resp:
                         return resp
                 except Exception as e:
-                    pass
+                    self.log(e)
         return None
 
     def reloadIndex(self):
@@ -652,6 +662,40 @@ class Soph:
             ret = await self.stripMentions(ret)
         return ret
         
+    
+    async def respondUserTerms(self, prefix, suffix, message, timer=NoTimer()):
+        try:
+            name = re.sub(" talk about\??", "", suffix).strip()
+            uid = self.userNameCache[name]
+            self.log("Getting terms")
+
+            terms = await wsClient.call(8888, message.server.id, "call", "terms_async", {uid:name}, corpusThresh = 0, corpusNorm = True, minScore = 0)
+   
+            self.log("Got terms")
+            userTerms = collections.defaultdict(list)
+            self.log("Making list")
+            for t in terms:
+                userTerms[t[0]].append(t)
+            ret = ""
+            self.log("Collated {0} terms".format(len(terms)))
+            for uid,t in userTerms.items():
+                t = sorted(t, key=lambda x:-x[2])
+
+                try:
+                    ret += ("Important words for {0}:\n".format(name))
+                except Exception as e:
+                    self.log(e)
+                for tup in t[:25]:
+                    try:
+                        ret += ("\t{0} (score: {1})".format(tup[1], int(tup[2])))
+                        ret += ("\n")
+                    except:
+                        pass
+            if ret:
+                return "```" + ret + "```"
+        except Exception as e:
+            self.log(e)
+        return None
 
     async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
         fromUser = message.author.display_name
@@ -805,7 +849,7 @@ class Soph:
             now = int(time.time())
             
             if (fromUser != self.lastFrom) and (now - self.lastReply < 2) and response and not (fromUser in response):
-                response =  message.author.display_name + " - " + response
+                response =  message.author.display_name + " - \n" + response
 
             self.lastReply = now
             self.lastFrom = fromUser
