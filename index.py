@@ -314,7 +314,7 @@ class Index:
 
                     return deduper(results, dedupe=dedupe)
 
-    async def collect_terms(self, t, usernames, corpusThresh, freq, minScore, filters= {}, timer=NoTimer()):
+    async def collect_terms(self, t, usernames, corpusThresh, freq, minScore, corpusSize, filters= {}, timer=NoTimer()):
         with timer.sub_timer("collect_terms outer") as t_:
             with self.getSearcher() as s:
                 ret = []
@@ -328,10 +328,13 @@ class Index:
                         occs = res.scored_length()
 
                     with t_.sub_timer("counting") as tt_:
-                        if occs > corpusThresh * freq:
-                            score = 10000* math.log(occs) / math.log (self.getCounts(u)) / freq
-                            if score > minScore:
-                                ret.append((u, t, score))
+                        if occs and occs > corpusThresh * freq:
+                            
+                            score = (occs / self.getCounts(u)) / (freq/corpusSize)
+                            if score > 0:
+                                score = math.log(score)*10
+                                if score > minScore:
+                                    ret.append((u, t, score))
                 return ret
 
     async def terms_async(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450, timer=NoTimer()):
@@ -360,7 +363,10 @@ class Index:
                     freq = reader.frequency("content", t)
 
                 if freq > 50 and freq < numDocs/100:
-                    ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore, filters = filters, timer=t_)
+                    try:
+                        ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore, numDocs, filters = filters, timer=t_)
+                    except Exception as e:
+                        print("Error while iterating through terms: {0}".format(e))
         return ret
 
     def terms(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):

@@ -447,7 +447,7 @@ class Soph:
                         await asyncio.sleep(10)
                         if not done:
                             try:
-                                await self.client.add_reaction(message, eee)
+                                asyncio.ensure_future(self.client.add_reaction(message, eee))
                             except:
                                 self.log("{0}th emoji was invalid".format(i))
                 except:
