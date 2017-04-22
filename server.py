@@ -18,7 +18,10 @@ class Server(tornado.websocket.WebSocketHandler):
         print("WebSocket opened")
 
     def on_message(self, message):
-        print (message)
+        try:
+            print (message)
+        except:
+            pass
         j = json.loads(message)
         methodName = j["method"]
         args = j.get("args", ())
@@ -38,13 +41,14 @@ class Server(tornado.websocket.WebSocketHandler):
 
             task.add_done_callback( onFinish )
             future = asyncio.ensure_future(task)
-            print("Returned")
 
         elif method:
             ret = method(res, *args, **kwargs)
             if type(ret) != str:
                 ret = json.dumps(ret)
             self.write_message(ret)
+
+        print("Returned")
 
 
     def on_close(self):

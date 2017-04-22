@@ -126,7 +126,16 @@ class TextEngine:
         if filteredResults:
             return filteredResults
         return None
-    
+
+    def termStats(self, query):
+        with Timer("termStats") as t:
+            results = self.index.queryStats(query, expand=True, timer= t)
+            return [r + (self.index.getCounts(r[1]) ,) for r in results]
+
+    async def userTerms(self, usernames, corpusThresh = 0.0, minScore = 450):
+        with Timer("userTerms") as t:
+            return await self.index.terms_async(usernames, corpusThresh, corpusNorm = True, minScore = minScore, timer = t)
+
 if __name__ == "__main__":
     opts = { "dir": r"data\196373421834240000\index"}
     te = TextEngine(opts)

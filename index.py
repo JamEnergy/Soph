@@ -313,37 +313,53 @@ class Index:
 
                     return deduper(results, dedupe=dedupe)
 
-    async def collect_terms(self, t, usernames, corpusThresh, freq, minScore):
-        with self.getSearcher() as s:
-            ret = []
-            q = whoosh.query.Term("content", t)
-            uq = whoosh.query.Or([whoosh.query.Term("user", u) for u in usernames])
-            qry = whoosh.query.And([q, uq])
-            res = s.search(qry, groupedby="user")
-            res.estimated_length()
-            d = res.groups("user")
-            for u,ary in d.items():
-                if len(ary) > corpusThresh * freq:
-                    score = 1000000* len(ary) / self.getCounts(u) / freq
-                    if score > minScore:
-                        ret.append((u, t, score))
-                        break
-            return ret
-    async def terms_async(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):
+    async def collect_terms(self, t, usernames, corpusThresh, freq, minScore, filters= {}, timer=NoTimer()):
+        with timer.sub_timer("collect_terms outer") as t_:
+            with self.getSearcher() as s:
+                ret = []
+                q = whoosh.query.Term("content", t)
+                for u in usernames:
+                    uq = filters.get(u,whoosh.query.Term("user", u))
+                    with t_.sub_timer("search") as tt_:
+                        res = s.search(q, limit = 100000000, filter=uq)
+
+                    with t_.sub_timer("length") as tt_:
+                        occs = res.scored_length()
+
+                    with t_.sub_timer("counting") as tt_:
+                        if occs > corpusThresh * freq:
+                            score = 1000000* occs / self.getCounts(u) / freq
+                            if score > minScore:
+                                ret.append((u, t, score))
+                return ret
+
+    async def terms_async(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450, timer=NoTimer()):
         ret = []
-        totalCounts = {u:self.getCounts(u) for u in usernames}
+        with timer.sub_timer("getCounts") as t:
+            totalCounts = {u:self.getCounts(u) for u in usernames}
         num = re.compile(r"^\d+$")
-        reader = self.ix.reader()
-        numDocs = reader.doc_count()
-        for t in reader.field_terms("content"):
-            if num.match(t):
-                continue
-            if len(t) < 3:
-                continue
-            
-            freq = reader.doc_frequency("content", t)
-            if freq > 50 and freq < numDocs/100:
-                ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore)
+
+        with timer.sub_timer("getReader") as t:
+            reader = self.ix.reader()
+
+        with timer.sub_timer("numDocs") as t:
+            numDocs = reader.doc_count()
+
+        with timer.sub_timer("initFilters") as t:
+            with self.getSearcher() as s:
+                filters = {u:s.search(whoosh.query.Term("user", u)) for u in usernames}
+
+        with timer.sub_timer("termLoop") as t_:
+            for t in reader.field_terms("content"):
+                if num.match(t):
+                    continue
+                if len(t) < 3:
+                    continue
+                with t_.sub_timer("termFreq") as t__:
+                    freq = reader.frequency("content", t)
+
+                if freq > 50 and freq < numDocs/100:
+                    ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore, filters = filters, timer=t_)
         return ret
 
     def terms(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):

@@ -1,10 +1,8 @@
 import wsClient
 from sophLogger import SophLogger as logger
-import sentiment
 import random
 import greeter
 import collections
-import question
 import reloader
 import itertools
 import json
@@ -15,17 +13,12 @@ import importlib
 import discord
 import time
 import asyncio
-import index
-import subject
 import sys
 from timer import Timer,NoTimer
 import traceback
-import textEngine
 import timeutils
 import utils
 import reactor
-
-import termGetter
     
 class ScopedStatus:
     def __init__(self, client, text):
@@ -96,6 +89,7 @@ g_nickNamePat = re.compile(r"^\s*\((.*)\)\s*")
 g_Lann = '<:lann:275432680533917697>'
 
 class Soph:
+    thinkingEmojis = ["🤔", "📖", "😦", "🙍", "🙄", "😣", "😴", "😫", "😕", "😔", "😒", "🤢","😳"]
     timeZonepat = re.compile(r"(CET)|(UTC)|(time)|(GMT)|(BST)|(CEST)|(server)", re.IGNORECASE)
     master_id = '178547716014473216'
     aliasPath = "aliases"
@@ -150,19 +144,10 @@ class Soph:
         self.optTime = time.time() - 1
         
         self.corpus = corpus
-        self.qp = question.QuestionParser()
 
         def loadMarkov(key):
             return markov.Corpus(os.path.join("data", str(key), "markovData"))
         self.markovs = utils.SophDefaultDict(loadMarkov)
-
-        def loadTE(key):
-            opts = { "dir": os.path.join("data", str(key), "index") }
-            return textEngine.TextEngine(opts)
-
-        self.textEngines = utils.SophDefaultDict(loadTE)
-
-        self.indexes = {}
         
         self.lastReply = 0
         self.userIds = None
@@ -189,18 +174,7 @@ class Soph:
                             (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (AlwaysCallback("parses various simple questions"), Soph.testTextEngine),
                             (StartsWithChecker("who talks about"), Soph.respondQueryStats),
-                            (StartsWithChecker("analyze"), Soph.respondSentimentUser),
-                            (StartsWithChecker("what did we say about"), Soph.respondWhoSaid),
-                            (StartsWithChecker("what do we think of"), Soph.whatDoWeThinkOf),
-                            (StartsWithChecker("what do we think about"), Soph.whatDoWeThinkOf),
-                            (PrefixNameSuffixChecker("what did", "say about"), Soph.respondUserSaidWhat),
-                            (SplitChecker("what does"), Soph.respondUserVerb),
-                            (SplitChecker("what did"), Soph.respondUserVerb),
-                            (SplitChecker("does"), Soph.respondUserVerbObject),
-                            (SplitChecker("did"), Soph.respondUserVerbObject),
-                            (StartsWithChecker("who"), Soph.respondWhoVerb),
-                            (StartsWithChecker("set"), Soph.setOption),
-                            (StartsWithChecker("parse"), Soph.parse)] 
+                            (StartsWithChecker("set"), Soph.setOption)] 
         self.ready = False
         if self.client.is_logged_in:
             self.onReady()
@@ -217,13 +191,11 @@ class Soph:
             return
         self.optTime = time.time()
 
-        def cb(key):
-            return index.Index(os.path.join("data", str(key), "index"), start = self.options["index"])
-        self.indexes = utils.SophDefaultDict(cb)
-
         self.loadUsers()
         self.loadAliases()
         self.loadTz()
+        task = self.loadAllUsers()
+        fut = asyncio.ensure_future(task)
 
         self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
 
@@ -247,14 +219,8 @@ class Soph:
         self.greeters = utils.SophDefaultDict(lambda x:greeter.Greeter(self.serverOpts.get(x,{}).get("greetings", [])))
 
         self.ready = True
-     
-    def getIndex(self, serverId):
-        return self.indexes[serverId]
-
     
     async def testTextEngine(self, prefix, suffix, message, timer=NoTimer()):
-        te = self.textEngines[message.server.id]
-            
         un = {}
         aliasMap = utils.SophDefaultDict(lambda x:list())
         for k,v in self.aliases.items():
@@ -266,8 +232,7 @@ class Soph:
                 un[m.name] = m.id
                 for alias in aliasMap[m.id]:
                     un[alias] = m.id
-
-        results = te.answer(suffix, un, timer=timer)
+        results = await wsClient.call(8888, message.server.id, "call", "answer", suffix, un)
         lines = []
         if not results:
             return "I couldn't get an answer for that..."
@@ -279,24 +244,6 @@ class Soph:
                 content = content[:100] + "..."
             lines.append("{0}: {1}".format(name, content))
         return "\n".join(lines)
-
-    async def parse(self, prefix, suffix, message, timer=NoTimer()):
-        import question
-        un = {}
-        aliasMap = utils.SophDefaultDict(list)
-        for k,v in self.aliases.items():
-            aliasMap[v].append(k)
-
-        if hasattr(message, "server"):
-            for m in message.server.members:
-                un[m.display_name] = m.id
-                un[m.name] = m.id
-                for alias in aliasMap[m.id]:
-                    un[alias] = m.id
-
-        un.update(self.aliases)
-        pq = self.qp.parse(suffix, un)
-        return pq.string()
 
     async def setAlias(self, prefix, suffix, message, timer=NoTimer()):
         if message.author.id != Soph.master_id:
@@ -430,11 +377,6 @@ class Soph:
                     self.log(e)
         return None
 
-    def reloadIndex(self):
-        """ reloads Index if necessary """
-        reloaded = reloader.reload(index, "index.py")
-        return reloaded
-
     def loadUsers(self):
         """ return a map of userId -> userName """
         self.userIds = json.loads(open("authors").read())
@@ -443,165 +385,6 @@ class Soph:
         self.userCache.update(self.userIds)
         
         return self.userIds
-
-    async def respondWhoVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
-        reloader.reload(subject, "subject.py")
-
-        index = self.getIndex(message.channel.server.id)
-
-        userIds = await self.loadAllUsers()
-        i_results = []
-        pred = self.makeQuery(suffix)
-
-        userNames = [k for k,v in self.userNameCache.items()]
-        with timer.sub_timer("combined-query") as t:
-            res = index.query(pred, 100, None, expand=True, userNames=None, dedupe=True, timer=t)
-        
-        filteredResults = []
-
-        with timer.sub_timer("subject-filter") as t:
-            for r in res:
-                if len(filteredResults) >= 10:
-                    break
-                try:
-                    doc = r[1]
-                    output = subject.checkVerbFull(doc, userNames, pred, want_bool, timer=t, subj_i = True)
-                    if output:
-                        filteredResults.append((r[0],output["extract"]))
-                except Exception as e:
-                    self.log("Exception while doing NLP filter: {0}".format(e))     
-        if filteredResults:
-            return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
-
-        if " " in pred:
-            return "I don't know"
-        return "I'm not sure what {0} {1}s".format("who", pred)
-
-    async def respondUserVerbObject(self, prefix, suffix, message, timer=NoTimer()):
-        return await self.respondUserVerb(prefix, suffix, message, True, timer=timer)
-
-    async def respondUserVerb(self, prefix, suffix, message, want_bool=False, timer=NoTimer()):
-        reloader.reload(subject, "subject.py")
-
-        userIds = await self.loadAllUsers()
-        userNames = self.userNameCache
-
-        thisUserWords = []
-        i_results = []
-
-        for subj,uid in self.userNameCache.items():
-            if suffix.startswith(subj) and suffix[len(subj)] == " ":
-                pred = self.makeQuery(suffix[len(subj):].strip())
-                nickNames = None
-                thisUserWords = [uid]
-                for _name, _id in self.userNameCache.items():
-                    if _id == uid:
-                        thisUserWords.append(_name)
-                break
-
-        with timer.sub_timer("combined-query") as t:
-            index = self.getIndex(message.server.id)
-            res = index.query(pred, 100, uid, expand=True, userNames=thisUserWords, dedupe=True, timer=t)
-        
-        filteredResults = []
-
-        with timer.sub_timer("subject-filter") as t:
-            for r in res:
-                if len(filteredResults) >= 10:
-                    break
-                try:
-                    doc = r[1]
-                    if uid == r[0]:
-                        output = subject.checkVerb(doc, None, pred, want_bool, timer=t)
-                    else:
-                        output = subject.checkVerbFull(doc, thisUserWords, pred, want_bool, timer=t)
-                    if output:
-                        filteredResults.append((r[0],output["extract"]))
-                except:
-                    pass             
-        if filteredResults:
-            return "\n".join(["{0}: {1}".format(userIds.get(r[0], r[0]),r[1]) for r in filteredResults])
-
-        if " " in pred:
-            return "I don't know"
-        return "I'm not sure what {0} {1}s".format(subj, pred)
-
-    async def whatDoWeThinkOf(self, prefix, suffix, message, timer=NoTimer()):
-        with timer.sub_timer("reload") as t:
-            
-            reloader.reload(subject, "subject.py")
-        
-        userIds = await self.loadAllUsers()
-        # TODO: Strip mentions
-
-        ret = ""
-
-        query = suffix
-        query = self.makeQuery(query)
-        index = self.getIndex(message.server.id)
-        results = index.queryLong(query, max=300, timer=timer)
-        with timer.sub_timer("subject-filter") as t:
-            results = subject.filter(results, query, max=5)
-            lines = []
-            for r in results:
-                un = await self.getUserName(r[0])
-                text = await self.stripMentions(r[1])
-                lines.append("{0}: {1}".format(un, text))
-        ret +=  "We think...\n" + "\n".join( lines )
-
-        return ret
-
-    async def respondSentimentUser(self, prefix, suffix, message, timer=NoTimer()):
-
-        ret =[]
-        
-        unMap = {}
-        aliasMap = utils.SophDefaultDict(lambda x:list())
-        for k,v in self.aliases.items():
-            aliasMap[v].append(k)
-
-        if hasattr(message, "server"):
-            for m in message.server.members:
-                unMap[m.display_name] = m.id
-                unMap[m.name] = m.id
-                for alias in aliasMap[m.id]:
-                    unMap[alias] = m.id
-
-        for un,uid in unMap.items():
-            if suffix.startswith(un):
-                suffix = suffix[len(un):]
-                suffix = suffix.strip()
-                if suffix.startswith("on "):
-                    suffix = suffix[3:]
-
-                index = self.getIndex(message.server.id)
-                if suffix:
-                    results = index.query(suffix, max=50, user = uid, expand = True, dedupe=True)
-                else:
-                    results = index.getLast(uid, 50)
-
-                contents = [r[1] for r in results]
-                scores = sentiment.analyze(contents)
-                for idx, score in enumerate(scores):
-                    content = contents[idx]
-                    score = score["aggregate"]["score"]
-                    mag = abs(score)
-                    if mag > 0.4:
-                        ret.append((content, score))
-                break
-        if not ret:
-            res = sentiment.analyze(suffix)
-            agg = res[0]["aggregate"]
-            return "Sounds {0} ({1:.2f})".format(agg["sentiment"], agg["score"])
-        else:
-            lines = []
-            for r in ret[0:10]:
-                if r[1] > 0:
-                    sign = ":grinning:"
-                else:
-                    sign = ":slight_frown:"
-                lines.append("{0}: {1} ({2:.2f})".format(r[0], sign, r[1]))
-            return "\n".join(lines)
 
     async def respondReact(self, prefix, suffix, message, timer=NoTimer()):
         if self.reactor:
@@ -615,9 +398,8 @@ class Soph:
 
             query = suffix
             query = self.makeQuery(query)
-            index = self.getIndex(message.server.id)
-
-            results = index.queryStats(query, expand=True, timer= t)
+            
+            results = await wsClient.call(8888, message.server.id, "call", "termStats", query) 
 
             if len(results) > 10:
                 results = results[:10]
@@ -627,7 +409,8 @@ class Soph:
             lines.append("{0:<18}: {1:<6} \t[{2}]".format("user", "count", "freq/1000 lines"))
             for v in results:                 
                 name = await self.resolveId(v[1])
-                lines.append("{0:<18}: {1:<6} \t[{2:.1f}]".format(name, v[0], 1000*v[0]/index.getCounts(v[1])))
+                c = v[2]
+                lines.append("{0:<18}: {1:<6} \t[{2:.1f}]".format(name, v[0], 1000*v[0]/c))
             return "```" + "\n".join(lines) + "```"
 
     async def respondMentions(self, prefix, suffix, message, timer=NoTimer()):
@@ -637,39 +420,48 @@ class Soph:
         for k, v in userIds.items():
             query = query.replace(v, k)
         query = self.makeQuery(query)
-        index = self.getIndex(message.server.id)
-        results = index.queryStats(query) # TODO: do a proper mentions query...
+
+        results = await wsClient.call(8888, message.server.id, "call", "termStats", query)
+
         if len(results) > 10:
             results = results[:10]
         if not results:
             return "No one, apparently, {0}".format(fromUser)
         return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
 
-    async def respondWhoSaid(self, prefix, suffix, message, timer=NoTimer()):
-        fromUser = message.author.display_name
-        server = getattr(message.channel,'server',None)
-        userIds = await self.loadAllUsers()
-        query = suffix
-        query = self.makeQuery(query)
-        with timer.sub_timer("query-long-wrap") as t:
-            index = self.getIndex(message.server.id)
-            results = index.queryLong(query, timer=t, max=10)
-            results = [r for r in results if len(r[1]) < 300]
-        if not results:
-            return "Apparently nothing, {0}".format(fromUser)
-        ret = "\n".join(["{0}: {1}".format(userIds.get(r[0], "?"), r[1]) for r in results])
-        with timer.sub_timer("strip-mentions") as t:
-            ret = await self.stripMentions(ret)
-        return ret
-        
-    
     async def respondUserTerms(self, prefix, suffix, message, timer=NoTimer()):
         try:
             name = re.sub(" talk about\??", "", suffix).strip()
             uid = self.userNameCache[name]
             self.log("Getting terms")
 
-            terms = await wsClient.call(8888, message.server.id, "call", "terms_async", {uid:name}, corpusThresh = 0, corpusNorm = True, minScore = 0)
+            await self.client.add_reaction(message, "👍🏻")
+
+            done = False
+            async def thinking():
+                try:
+                    nums = list(range(len(Soph.thinkingEmojis)))
+                    random.shuffle(nums)
+                    for i in nums:
+                        eee = Soph.thinkingEmojis[i]
+                        await asyncio.sleep(10)
+                        if not done:
+                            try:
+                                await self.client.add_reaction(message, eee)
+                            except:
+                                self.log("{0}th emoji was invalid".format(i))
+                except:
+                    pass
+                return True
+
+            asyncio.ensure_future( thinking() )
+
+            try:
+                terms = await wsClient.call(8888, message.server.id, "call", "userTerms", {uid:name}, corpusThresh = 0, minScore = 0)
+            except:
+                raise
+            finally:
+                done = True
    
             self.log("Got terms")
             userTerms = collections.defaultdict(list)
@@ -696,44 +488,6 @@ class Soph:
         except Exception as e:
             self.log(e)
         return None
-
-    async def respondUserSaidWhat(self, prefix, suffix, message, timer=NoTimer()):
-        fromUser = message.author.display_name
-        server = getattr(message.channel, "server", None)
-        await self.loadAllUsers()
-        userNames = self.userNameCache
-        sayPat = re.compile(r"\s+say about\s")
-        match = sayPat.finditer(suffix)
-        for m in match:
-            name = suffix[:m.start(0)].strip()
-            user = userNames.get(name, None)
-            if not user:
-                if name == "Soph":
-                    return "I can't tell you that."
-                return "I don't know who {0} is {1}".format(name, g_Lann)
-            payload = self.makeQuery(suffix[m.end(0):])
-
-            ret = ""
-            index = self.getIndex(message.server.id)
-            rgen = index.queryLong(payload, user = user, max= 20, expand=True, timer=timer)
-            results = []
-            for r in rgen:
-                if len(results) > 4:
-                    break
-                if len(r[1]) < 300 and not subject.isSame(r[1], payload):
-                    results.append(r)
-                    
-            if results:
-                payload = re.sub(r'\*', r'', payload)
-                resp = "*{0} on {1}*:\n".format(name, payload)
-                for i in range(0,len(results)):
-                    text = results[i][1]
-                    text =  await self.stripMentions(text, server)
-                    resp += "{0}) {1}\n".format(i+1, text)
-                ret += resp
-            if ret:
-                return ret
-        return "Nothing, apparently, {0}".format(fromUser)
 
     async def respondImpersonate(self, prefix, suffix, message, timer=NoTimer()):
         reloaded = reloader.reload(markov, "markov.py")

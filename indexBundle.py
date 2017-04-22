@@ -1,14 +1,14 @@
 import server
-import index
 import utils
 import os
 import inspect
-
+import textEngine
+import json
 
 class MyHandler:
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        print ("Listening now!")
 
     def initialize(self, **kwargs):
         self.indexes = kwargs.get("state", {})
@@ -26,8 +26,13 @@ class MyHandler:
         return text
 
 if __name__ == "__main__":
-    def make(sid):
-        return index.Index(os.path.join("data", sid, "index"), start=False)
+    with open("options.json", "r", encoding="utf-8") as f:
+        global_opts = json.loads(f.read(), encoding = "utf-8")
+    
+    def make(key):
+        opts = { "dir": os.path.join("data", str(key), "index"), 
+                "startIndexing":global_opts.get("startIndexing", False) }
+        return textEngine.TextEngine(opts)
 
     state = utils.SophDefaultDict(make)
     server.run(8888, MyHandler, state)
