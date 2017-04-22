@@ -1,4 +1,5 @@
 import whoosh
+import math
 from whoosh.fields import Schema, TEXT, ID ,KEYWORD, DATETIME, NUMERIC
 import shutil
 import os.path
@@ -328,7 +329,7 @@ class Index:
 
                     with t_.sub_timer("counting") as tt_:
                         if occs > corpusThresh * freq:
-                            score = 1000000* occs / self.getCounts(u) / freq
+                            score = 10000* math.log(occs) / math.log (self.getCounts(u)) / freq
                             if score > minScore:
                                 ret.append((u, t, score))
                 return ret
