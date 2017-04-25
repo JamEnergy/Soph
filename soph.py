@@ -19,6 +19,7 @@ import traceback
 import timeutils
 import utils
 import reactor
+import subprocess
     
 class ScopedStatus:
     def __init__(self, client, text):
@@ -134,6 +135,7 @@ class Soph:
         return self.userCache
 
     def __init__(self, corpus = None, client = None):
+        # TODO: check dependencies
         self.client = client
         self.log = logger("Soph.log")
         self.userCache = {} #userId to userName
@@ -159,6 +161,7 @@ class Soph:
         self.greeters = {}
         self.reactor = None
         self.addressPat = None 
+        self.childProcs = []
         # callback checkers should return -1 for "not this action" or offset of payload
         self.noPrefixCallbacks = [
                 (AlwaysCallback("reacts to certain messages"), Soph.respondReact),
@@ -179,6 +182,11 @@ class Soph:
         if self.client.is_logged_in:
             self.onReady()
 
+    def stop(self):
+        if hasattr(self, "childProcs"):
+            for proc in self.childProcs:
+                subprocess.Popen("TASKKILL /F /PID {pid} /T".format(pid=proc.pid))
+
     def onReady(self):
         try:
             self.options = Soph.defaultOpts
@@ -195,6 +203,29 @@ class Soph:
         self.loadAliases()
         self.loadTz()
         task = self.loadAllUsers()
+        fut = asyncio.ensure_future(task)
+
+        async def check_deps():
+            try:
+                resp = await wsClient.call(8888, "ping", "")
+                print ("index already up")
+            except:
+                print ("index isn't up")
+                kwargs = {}
+                #if platform.system() == 'Windows':
+                # from msdn [1]
+                #CREATE_NEW_PROCESS_GROUP = 0x00000200  # note: could get it from subprocess
+                #DETACHED_PROCESS = 0x00000008          # 0x8 | 0x200 == 0x208
+                #kwargs.update(creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP) 
+                sp = subprocess.Popen(["python", "indexBundle.py"],
+                                        start_new_session = True,
+                                        shell=True, stdin=None, 
+                                        stdout=None, stderr=None,
+                                        close_fds=True, **kwargs)
+                self.childProcs.append( sp ) 
+                
+
+        task = check_deps()
         fut = asyncio.ensure_future(task)
 
         self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")

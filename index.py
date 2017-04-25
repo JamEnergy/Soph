@@ -399,7 +399,39 @@ class Index:
                                 break
         return ret
 
-    def whoMentions(self, target, names):
+    def countUserMentionsOthers(self, uid):
+        with self.getSearcher() as s:
+            uq = whoosh.query.Term("mentionsUsers", "*")
+
+            qp = QueryParser("mentionsUsers", schema=self.ix.schema)
+
+            tq = qp.parse("*")
+
+            uq = whoosh.query.Term("user", uid)
+
+            q = whoosh.query.And([uq, tq])
+            res = s.search(q, limit=10000000)
+            return res
+
+    def getMentionGraph(self, coreUsers : list):
+        qp = QueryParser("mentionsUsers", schema=self.ix.schema)
+        tq = qp.parse("*") # something in mentionUsers
+        ret = defaultdict(lambda: defaultdict(int))
+        with self.getSearcher() as s:
+            for uid in coreUsers:
+                uq = whoosh.query.Term("user", uid) # limit to uid
+
+                q = whoosh.query.And([uq, tq])
+                res = s.search(q, limit=10000000)
+                thisUserContrib = ret[uid]
+                for r in res:
+                    mentions = r["mentionsUsers"]
+                    mentions = mentions.split(",")
+                    for m in mentions:
+                        thisUserContrib[m] += 1
+        return ret
+
+    def whoMentions(self, target:str, names:set):
         if type(names) != set:
             names = set(names)
         with self.getSearcher() as s:
@@ -462,8 +494,36 @@ if __name__ == "__main__":
         users = json.loads( f.read())
 
     userNames = {v:k for k,v in users.items()}
+    subject = "Chaeldar"
 
-    res = index.getTimes(userNames["Chaeldar"])
+    graph = index.getMentionGraph([userNames[subject], userNames["Jerka"]])
+    res = index.countUserMentionsOthers(userNames[subject])
+    mentions = defaultdict(int)
+    numMentions = 0
+    for r in res:
+        try:
+            content = r["content"]
+            thisMentions = r["mentionsUsers"]
+            thisMentions = thisMentions.split(",")
+            numMentions += len(thisMentions)
+            for user in thisMentions:
+                mentions[user] += 1
+        except:
+            pass
+    mentioners = index.whoMentions(userNames[subject], [])
+
+    for m,v in mentions.items():
+        try:
+            print("{0} -> {1}: {2} ({3:.2f}%)".format(subject, users.get(m, "?"), v, 100*v/numMentions))
+            if m in mentioners:
+                print("{0} -> {1}: {2}".format(users.get(m, "?"), subject, mentioners[m]))
+
+        except:
+            pass
+
+    sys.exit(0)
+
+    res = index.getTimes(userNames["Jerka"])
     counts = [(r[0], len(vals)) for r, vals in res.items() if r]
 
     totals = defaultdict(lambda:[0,0])

@@ -42,5 +42,8 @@ async def on_message(message):
         print (e)
         print (traceback.format_exc())
 
-client.run(tok)
+try:
+    client.run(tok)
+except:
+    print ("Exception")
 

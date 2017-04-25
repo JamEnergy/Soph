@@ -138,6 +138,21 @@ class TextEngine:
         with Timer("userTerms") as t:
             return await self.index.terms_async(usernames, corpusThresh, corpusNorm = True, minScore = minScore, timer = t)
 
+    async def relationships(self, idsMap:dict, uid):
+        """ idsMap: dict id -> list [ userNames ]"""
+        [
+            (("Lux", "Ina"), ["mentions", 0.5]),
+            (("Lux", "Ina"), ["Ina is a poo"])
+        ]
+        ret = [] 
+        for peer,name in idsMap.items():
+            if peer == uid:
+                continue
+
+
+        
+        relationship = ["to", ["Mentions", 0.5], "Lux"]
+
 if __name__ == "__main__":
     opts = { "dir": r"data\196373421834240000\index"}
     te = TextEngine(opts)

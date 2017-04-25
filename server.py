@@ -1,3 +1,4 @@
+import signal
 import tornado
 import tornado.websocket
 import tornado.httpserver
@@ -60,7 +61,21 @@ def run(port, cls, state):
             super().__init__(*args, **kwargs)
         pass
 
+    class Stop(tornado.web.RequestHandler):
+        loop = None
+        server = None
+        def get(self):
+            print ("Stopping...")
+            Stop.server.stop()
+            Stop.loop.stop()
+
+    class Ping(tornado.websocket.WebSocketHandler):
+        def on_message(self, message):
+            self.write_message("OK")
+
     application = tornado.web.Application([
+        (r'/stop', Stop),
+        (r'/ping', Ping),
         (r'/(.*)', Handler, {"state":state}),
     ])
 
@@ -69,6 +84,10 @@ def run(port, cls, state):
 
     http_server = tornado.httpserver.HTTPServer(application)
     Server.server = http_server
+
+    Stop.server = http_server
+    Stop.loop = asyncio.get_event_loop()
+
     http_server.listen(port)
 
     asyncio.get_event_loop().run_forever()
@@ -83,7 +102,7 @@ if __name__ == "__main__":
 
     http_server = tornado.httpserver.HTTPServer(application)
     Server.server = http_server
-    http_server.listen(8888)
 
+
+    http_server.listen(8888)
     asyncio.get_event_loop().run_forever()
-    
