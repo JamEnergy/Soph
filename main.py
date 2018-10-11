@@ -18,15 +18,17 @@ async def on_ready():
     print(client.user.id)
 
     master_info = await client.get_user_info(soph.Soph.master_id)
-    await client.send_message(master_info, "I'm ready")
 
     #await client.change_presence(game = discord.Game(name="with your chat data"))
     print('------')
     global my_soph
     my_soph.onReady()
+    await client.send_message(master_info, my_soph.greeting)
 
 @client.event
 async def on_error(event, *args, **kwargs):
+    print(args)
+    print(kwargs)
     print("Error?")
 
 @client.event

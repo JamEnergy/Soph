@@ -197,6 +197,8 @@ class Soph:
         except Exception as e:
             self.log("Crap: {0}".format(e))
             return
+			
+        self.greeting = self.options.get("greeting", "I'm ready")
         self.optTime = time.time()
 
         self.loadUsers()
@@ -410,10 +412,15 @@ class Soph:
 
     def loadUsers(self):
         """ return a map of userId -> userName """
-        self.userIds = json.loads(open("authors").read())
-        for un, uid in self.userIds.items():
-            self.userNameCache[uid] = un
-        self.userCache.update(self.userIds)
+        AUTHORS_FILENAME = "authors"
+        if os.path.isfile(AUTHORS_FILENAME):
+            self.userIds = json.loads(open("authors").read())
+            for un, uid in self.userIds.items():
+                self.userNameCache[uid] = un
+            self.userCache.update(self.userIds)
+        else:
+            with open(AUTHORS_FILENAME, "w") as of:
+                json.dump({}, of)
         
         return self.userIds
 
