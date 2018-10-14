@@ -609,7 +609,7 @@ class Soph:
                 if g.checkGreeting(message.content):
                     master_info = await self.client.get_user_info(Soph.master_id)
                     await self.client.add_reaction(message, "👋")
-                    while random.randint(0,10) > 4:
+                    while random.randint(10) > 4:
                         e = greeter.randomEmoji()
                         try:
                             await self.client.add_reaction(message, e)
