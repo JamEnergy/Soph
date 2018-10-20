@@ -20,6 +20,8 @@ import timeutils
 import utils
 import reactor
 import subprocess
+import names
+
     
 class ScopedStatus:
     def __init__(self, client, text):
@@ -115,7 +117,7 @@ class Soph:
             if info:
                 name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
                 self.userCache[uid] = name
-                self.userNameCache[name] =uid
+                self.userNameCache[name] = uid
                 return name
         except:
             pass # probably wasn't a user
@@ -144,8 +146,11 @@ class Soph:
         self.aliases = {} # map of un -> uid
         self.options = Soph.defaultOpts
         self.optTime = time.time() - 1
-        
+
         self.corpus = corpus
+
+        # stupid test
+        self.name_managers = names.NameManagerBundle(self.client, True)
 
         def loadMarkov(key):
             return markov.Corpus(os.path.join("data", str(key), "markovData"))
@@ -270,7 +275,7 @@ class Soph:
         if not results:
             return "I couldn't get an answer for that..."
         for r in results:
-            name = await self.resolveId(r[0])
+            name = await self.resolveId(r[0], server=message.server)
             content = r[1].replace("\n", "\n\t")
             content = await self.stripMentions(content, message.server)
             if len(content) > 100:
@@ -445,8 +450,8 @@ class Soph:
                 return "No one, apparently, {0}".format(fromUser)
             lines = []
             lines.append("{0:<18}: {1:<6} \t[{2}]".format("user", "count", "freq/1000 lines"))
-            for v in results:                 
-                name = await self.resolveId(v[1])
+            for v in results:
+                name = await self.resolveId(v[1], message.server)
                 c = v[2]
                 lines.append("{0:<18}: {1:<6} \t[{2:.1f}]".format(name, v[0], 1000*v[0]/c))
             return "```" + "\n".join(lines) + "```"
@@ -559,7 +564,7 @@ class Soph:
     async def respondTime(self, message):
         """ returns None if this wasn't a 'time' thing """
         uid = message.author.id
-        text = await self.stripMentions(message.content)
+        text = await self.stripMentions(message.content, message.server)
         timeStr = timeutils.findTime(text)
         if not timeStr:
             return None
@@ -686,21 +691,10 @@ class Soph:
             reply = await self.stripMentions(payload, server)
             return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
-    async def resolveId(self, id, server = None):
-        name = "?"
-        try:
-            name = await self.getUserName(id)
-            if not name:
-                if server:
-                    info = discord.utils.find(lambda x: x.id == id, server.roles)
-                else:
-                    info = await self.client.get_user_info(id)
-                name = getattr(info, "display_name", getattr(info, "name", "?"))
-        except:
-            pass        
-        return name
+    async def resolveId(self, uid, server):
+        return self.name_managers.get(server).get_name(uid)
 
-    async def stripMentions(self, text, server = None):
+    async def stripMentions(self, text, server):
         it = re.finditer("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx
         for matches in it:
             for m in matches.groups():

@@ -58,7 +58,7 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
         else:
             doc = text
     if len(doc) > 3:
-        output["full_text"] = doc.string
+        output["full_text"] = doc.text
         s = ["{0} [{1} {3}]".format(word.text, word.lemma_, word.tag_, word.pos_) for word in doc]
         output["tokenized"] =  ", ".join(s)
 
@@ -104,7 +104,7 @@ def checkVerbFull(text, subjects, verb, want_bool, timer=NoTimer(), subj_i = Fal
             output["verb"] = v.lemma_
             beg = left.idx
             end = v.right_edge.idx+len(v.right_edge.text)
-            output["extract"]=doc.string[beg:end]
+            output["extract"]=doc.text[beg:end]
 
         if "extract" in output:
             return output
