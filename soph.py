@@ -612,7 +612,6 @@ class Soph:
             if message.channel.name in opts.get("greetChannels", {}):
                 g = self.greeters[server.id]
                 if g.checkGreeting(message.content):
-                    master_info = await self.client.get_user_info(Soph.master_id)
                     await self.client.add_reaction(message, "👋")
                     while random.randint(0,10) > 4:
                         e = greeter.randomEmoji()
