@@ -613,7 +613,7 @@ class Soph:
                 g = self.greeters[server.id]
                 if g.checkGreeting(message.content):
                     await self.client.add_reaction(message, "👋")
-                    while random.randint(0,10) > 4:
+                    while random.randint(10) > 4:
                         e = greeter.randomEmoji()
                         try:
                             await self.client.add_reaction(message, e)
