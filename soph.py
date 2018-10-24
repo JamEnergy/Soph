@@ -254,10 +254,13 @@ class Soph:
                 o["infoRegs"] = [re.compile(r) for r in regs]
 
             self.reactor = reactor.Reactor(self.serverOpts)
-        self.greeters = utils.SophDefaultDict(lambda x:greeter.Greeter(self.serverOpts.get(x,{}).get("greetings", [])))
 
+        def make_greeter(server):
+            return greeter.Greeter(self.serverOpts.get(server.id, {}).get("greetings", {}), server)
+
+        self.greeters = utils.SophDefaultDict(make_greeter)
         self.ready = True
-    
+
     async def testTextEngine(self, prefix, suffix, message, timer=NoTimer()):
         un = {}
         aliasMap = utils.SophDefaultDict(lambda x:list())
@@ -610,17 +613,8 @@ class Soph:
             server = message.server
             opts = self.serverOpts.get(server.id, {})
             if message.channel.name in opts.get("greetChannels", {}):
-                g = self.greeters[server.id]
-                if g.checkGreeting(message.content):
-                    await self.client.add_reaction(message, "👋")
-                    while random.randint(10) > 4:
-                        e = greeter.randomEmoji()
-                        try:
-                            await self.client.add_reaction(message, e)
-                        except:
-                            break
-                    else:
-                        pass
+                g = self.greeters[server]
+                await g.add_reactions(message, self.client)
         except Exception as e:
             pass
 

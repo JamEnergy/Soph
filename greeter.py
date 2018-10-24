@@ -2,6 +2,7 @@
 import re
 import random
 import json
+import discord
 
 with open("inputemoji.json", encoding="utf-8") as f:
     emojis = f.read()
@@ -15,14 +16,22 @@ try:
 except Exception as e:
     print (e)
 
+
 class Greeter():
-    def __init__(self, helloList = None):
-        defaultList = set([r"((good )?(morning|nighty?))",
+    def __init__(self, greetings_opts, server:discord.Server):
+        self.server = server
+        emojis = server.emojis
+        self.emoji_lookup = {e.name: e for e in emojis}
+        self.opts = greetings_opts
+        defaults = greetings_opts.get("defaults", {})
+        self.chance = defaults.get("chance", 0.5)
+        helloList = defaults.get("greetings", [])
+        defaultList = {r"((good )?(morning|nighty?))",
             r"hi+",
             r"h?ello+",
             r"heya?",
             r"hiya+",
-            r"hai+"])
+            r"hai+"}
 
         if helloList:
             for h in helloList:
@@ -44,11 +53,44 @@ class Greeter():
 
         return False
 
+    async def add_reactions(self, message:discord.Message, client):
+        try:
+            if self.checkGreeting(message.content):
+                await client.add_reaction(message, "👋")
 
-def randomEmoji():
-    global emoji
-    index = random.randint(0,len(emoji)-1)
-    return emoji[index]
+                this_user_settings = self.get_user_opts(message.author.id)
+                this_chance = this_user_settings.get("chance", self.chance) # I want Penny
+
+                # or to have her sit next to me while I work on Soph
+                # she's very sweet and nice to me
+                while random.random() < this_chance:
+                    e = self.randomEmoji(message.author.id)
+                    try:
+                        await client.add_reaction(message, e)
+                    except:
+                        break
+                else:
+                    pass
+        except Exception as e:
+            pass
+
+    def get_user_opts(self, author_id):
+        user_settings = self.opts.get("users", {})
+        this_user_settings = user_settings.get(author_id, {})
+        return this_user_settings
+
+    def randomEmoji(self, author_id):
+        global emoji
+        this_user_settings = self.get_user_opts(author_id)
+        this_user_emoji = this_user_settings.get("emoji", [])
+
+        index = random.randint(0,len(emoji)+len(this_user_emoji)-1)
+
+        if index < len(emoji):
+            return emoji[index]
+        else:
+            e = this_user_emoji[index-len(emoji)]
+            return self.emoji_lookup.get(e, e)
 
 
 
@@ -63,8 +105,8 @@ if __name__ == "__main__":
         "ello team",
         "hi",
         "ello",
-        "hi Lux",
-        "hi Lux <a>",
+        "hi Penny",
+        "hi Penny <a>",
         "hi <1234>",
         "hi ??",
         "howdy"
