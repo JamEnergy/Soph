@@ -19,12 +19,14 @@ except Exception as e:
 
 class Greeter():
     def __init__(self, greetings_opts, server:discord.Server):
+        global emoji
         self.server = server
         emojis = server.emojis
         self.emoji_lookup = {e.name: e for e in emojis}
         self.opts = greetings_opts
         defaults = greetings_opts.get("defaults", {})
         self.chance = defaults.get("chance", 0.5)
+        self.emoji = emoji + defaults.get("emoji", [])
         helloList = defaults.get("greetings", [])
         defaultList = {r"((good )?(morning|nighty?))",
             r"hi+",
@@ -80,16 +82,15 @@ class Greeter():
         return this_user_settings
 
     def randomEmoji(self, author_id):
-        global emoji
         this_user_settings = self.get_user_opts(author_id)
         this_user_emoji = this_user_settings.get("emoji", [])
 
-        index = random.randint(0,len(emoji)+len(this_user_emoji)-1)
+        index = random.randint(0,len(self.emoji)+len(this_user_emoji)-1)
 
-        if index < len(emoji):
-            return emoji[index]
+        if index < len(self.emoji):
+            return self.emoji[index]
         else:
-            e = this_user_emoji[index-len(emoji)]
+            e = this_user_emoji[index-len(self.emoji)]
             return self.emoji_lookup.get(e, e)
 
 
