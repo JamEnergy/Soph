@@ -88,10 +88,10 @@ class Greeter():
         index = random.randint(0,len(self.emoji)+len(this_user_emoji)-1)
 
         if index < len(self.emoji):
-            return self.emoji[index]
+            e = self.emoji[index]
         else:
             e = this_user_emoji[index-len(self.emoji)]
-            return self.emoji_lookup.get(e, e)
+        return self.emoji_lookup.get(e, e)
 
 
 
