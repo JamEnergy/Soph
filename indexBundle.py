@@ -4,11 +4,12 @@ import os
 import inspect
 import textEngine
 import json
-
+from sophLogger import SophLogger
+LOGGER = SophLogger("indexBundle.log")
 class MyHandler:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print ("Listening now!")
+        LOGGER("Listening now!")
 
     def initialize(self, **kwargs):
         self.indexes = kwargs.get("state", {})

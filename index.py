@@ -118,7 +118,6 @@ class Index:
             self.indexer.join()
 
     def log(self, text):
-        print (text)
         self.logger.write(text)
         self.logger.write("\n")
         self.logger.flush()
@@ -158,7 +157,6 @@ class Index:
                     time.sleep(10)
 
             except Exception as e:
-                print(str(e))
                 self.log(str(e))
                 try:
                     if path:
@@ -366,7 +364,7 @@ class Index:
                     try:
                         ret += await self.collect_terms(t, usernames, corpusThresh, freq, minScore, numDocs, filters = filters, timer=t_)
                     except Exception as e:
-                        print("Error while iterating through terms: {0}".format(e))
+                        self.log("Error while iterating through terms: {0}".format(e))
         return ret
 
     def terms(self, usernames, corpusThresh = 0.6, corpusNorm = False, minScore = 450):

@@ -178,6 +178,7 @@ class Soph:
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
                             (StartsWithChecker("help"), Soph.help),
                             (StartsWithChecker("impersonate"), Soph.respondImpersonate),
+                            (StartsWithChecker("analyze"), Soph.respondAnalyze),
                             (StartsWithChecker("set alias"), Soph.setAlias),
                             (StartsWithChecker("set locale"), Soph.setTimeZone),
                             (AlwaysCallback("parses various simple questions"), Soph.testTextEngine),
@@ -561,8 +562,13 @@ class Soph:
                 return reply
             return "Hmm... I couldn't think of anything to say {0}".format(g_Lann)
         except Exception as e:
-            self.log (e)
+            self.log(e)
             return g_Lann
+
+    async def respondAnalyze(self, prefix, suffix, message:discord.Message, timer=NoTimer()):
+        
+        return "Not implemented yet"
+
 
     async def respondTime(self, message):
         """ returns None if this wasn't a 'time' thing """
