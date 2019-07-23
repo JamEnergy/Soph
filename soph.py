@@ -107,22 +107,6 @@ class Soph:
 
     async def getUserId(self, name):
         return self.userNameCache.get(name, None)
-    
-    async def getUserName(self, uid):
-        if uid in self.userCache:
-            return self.userCache[uid]
-
-        try:
-            info = await self.client.get_user_info(uid)
-            if info:
-                name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
-                self.userCache[uid] = name
-                self.userNameCache[name] = uid
-                return name
-        except:
-            pass # probably wasn't a user
-        
-        return None
 
     async def loadAllUsers(self):
         """ load and return map of id->name """
@@ -691,7 +675,7 @@ class Soph:
             return "I was addressed, and {0} said \"{1}\"".format(fromUser, reply)
 
     async def resolveId(self, uid, server):
-        return self.name_managers.get(server).get_name(uid)
+        return await self.name_managers.get(server).get_name(uid)
 
     async def stripMentions(self, text, server):
         it = re.finditer("<?@[!&]*(\d+)>", text) # the <? is to account for trimming bugs elsewhere Dx

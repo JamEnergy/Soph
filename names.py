@@ -61,18 +61,18 @@ class NameManager(object):
         except IOError:
             return {}
 
-    def get_name(self, uid):
-        return self._uid_to_name.get(uid, "?")
+    #def get_name(self, uid):
+    #    return self._uid_to_name.get(uid, "?")
 
-    async def getUserName(self, uid):
-        if uid in self.userCache:
-            return self.userCache[uid]
+    async def get_name(self, uid):
+        if uid in self._uid_to_name:
+            return self._uid_to_name[uid]
         try:
-            info = await self.client.get_user_info(uid)
+            info = await self._client.get_user_info(uid)
             if info:
-                name = getattr(info, "display_name", None) or getattr(info, "name", g_Lann)
-                self.userCache[uid] = name
-                self.userNameCache[name] = uid
+                name = getattr(info, "display_name", None) or getattr(info, "name", "[unknown]")
+                self._uid_to_name[uid] = name
+                self._name_to_uid[name] = uid
                 return name
         except:
             pass  # probably wasn't a user

@@ -29,6 +29,7 @@ async def on_ready():
 
 @client.event
 async def on_error(event, *args, **kwargs):
+    print(event)
     print(args)
     print(kwargs)
     print("Error?")
