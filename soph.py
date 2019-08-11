@@ -319,6 +319,7 @@ class Soph:
                     self.userNameCache[k] = v
     
     def loadTz(self):
+        tz = {}
         try:
             with open("timezones") as f:
                tz = json.loads( f.read() )
