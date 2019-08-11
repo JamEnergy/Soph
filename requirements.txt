@@ -1,0 +1,8 @@
+aiohttp==3.0.5
+discord.py==0.16.7
+spacy==2.0.5
+markovify==0.5.4
+python-dateutil==2.6.0
+pendulum==1.2.0
+tornado==4.4.2
+Whoosh==2.7.4
