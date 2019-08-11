@@ -13,19 +13,23 @@ tok = open("token.dat").read()
 
 @client.event
 async def on_ready():
-    print('Logged in as')
-    print(client.user.name)
-    print(client.user.id)
+    try:
+        print('Logged in as')
+        print(client.user.name)
+        print(client.user.id)
 
 
-    #await client.change_presence(game = discord.Game(name="with your chat data"))
-    print('------')
-    global my_soph  # type:soph.Soph
-    my_soph.onReady()
-    listeners = my_soph.options["masters"] or [soph.Soph.master_id]
-    for m,v in listeners.items():
-        master_info = await client.get_user_info(m)
-        await client.send_message(master_info, v or my_soph.greeting)
+        #await client.change_presence(game = discord.Game(name="with your chat data"))
+        print('------')
+        global my_soph  # type:soph.Soph
+        my_soph.onReady()
+        listeners = my_soph.options["masters"] or [soph.Soph.master_id]
+        for m,v in listeners.items():
+            master_info = await client.get_user_info(m)
+            await client.send_message(master_info, v or my_soph.greeting)
+    except Exception as e:
+        print("Exception in on_ready:")
+        traceback.print_exc()  # hope
 
 @client.event
 async def on_error(event, *args, **kwargs):
