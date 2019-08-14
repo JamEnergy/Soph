@@ -2,7 +2,19 @@ import spacy
 from nlp import get
 import re
 from spacy.symbols import nsubj, VERB
+import spacy.symbols
+import spacy.tokens
 from enum import Enum
+
+import inspect
+
+def print_token(tok):
+    props = dir(tok)
+    ret = {}
+    for prop in props:
+        if not prop.startswith("__") and prop not in {"sent_start"}:
+            ret[prop] = getattr(tok, prop, None)
+    return ret
 
 class Targets (Enum):
     Bool = 0
@@ -107,7 +119,7 @@ class DumbQuestionParser:
             i = 0
             verbIsNext = False
             for word in it:
-                if word.pos == 94: # punct
+                if word.pos == spacy.symbols.PUNCT: # punct
                     continue
                 if verbIsNext and not mainVerb:
                     mainVerb = word
@@ -140,7 +152,7 @@ class DumbQuestionParser:
         passedMainVerb = False
 
         for i,word in enumerate(it):
-            if word.pos == 94 or word.pos == 87: # punct or determiner
+            if word.pos == spacy.symbols.PUNCT or word.pos == spacy.symbols.DET: # punct or determiner
                 continue
 
             if i == 0:
@@ -157,7 +169,7 @@ class DumbQuestionParser:
                         continue
             if i > 0 and i < 3:
                 if not ret.subject_type and  ("sub" in word.dep_):
-                    if word.lemma_ == "we":
+                    if word.lower_ == "we":
                         ret.subject_type = SubjectTypes.We
                         foundSubject = True
                         continue 
@@ -276,7 +288,8 @@ class QuestionParser:
 if __name__ == "__main__":
     qp = DumbQuestionParser()
     users = {"Marta":1, "Chaeldar":1, "Lisa":2, "Lux":3, "Jerka":4}
-    texts = ["what does Jerka think?",
+    texts = [
+            "what does Jerka think?",
             "is Lux noob?",
              "is Lux pro?",
              "is Lux a noob?",
