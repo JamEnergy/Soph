@@ -1,6 +1,7 @@
 import wsClient
 from sophLogger import SophLogger as logger
 import random
+import aiohttp
 import greeter
 import collections
 import reloader
@@ -199,8 +200,11 @@ class Soph:
 
         async def check_deps():
             try:
-                resp = await wsClient.call(8888, "ping", "")
-                print ("index already up")
+
+                #resp = await wsClient.call(8888, "ping", "")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get('http://localhost:8888/alive') as resp:
+                        print ("index already up")
             except:
                 print ("index isn't up")
                 kwargs = {}
@@ -258,7 +262,13 @@ class Soph:
                 un[m.name] = m.id
                 for alias in aliasMap[m.id]:
                     un[alias] = m.id
-        results = await wsClient.call(8888, message.server.id, "call", "answer", suffix, un)
+
+        payload = {"method": "answer", "sid":message.server.id, "args": [suffix, un]}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
+                results = await resp.json()
+
         lines = []
         if not results:
             return "I couldn't get an answer for that..."
@@ -430,8 +440,12 @@ class Soph:
 
             query = suffix
             query = self.makeQuery(query)
-            
-            results = await wsClient.call(8888, message.server.id, "call", "termStats", query) 
+
+            payload = {"method": "termStats", "sid": message.server.id, "args": [query]}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
+                    results = await resp.json()
 
             if len(results) > 10:
                 results = results[:10]
@@ -453,7 +467,11 @@ class Soph:
             query = query.replace(v, k)
         query = self.makeQuery(query)
 
-        results = await wsClient.call(8888, message.server.id, "call", "termStats", query)
+        payload = {"method": "termStats", "sid": message.server.id, "args": [query]}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
+                results = await resp.json()
 
         if len(results) > 10:
             results = results[:10]
@@ -489,7 +507,12 @@ class Soph:
             asyncio.ensure_future( thinking() )
 
             try:
-                terms = await wsClient.call(8888, message.server.id, "call", "userTerms", {uid:name}, corpusThresh = 0, minScore = 0)
+                payload = {"method": "userTerms", "sid": message.server.id, "args": {uid:name}, "kwargs":{
+                    "corpusThresh":0, "minScore":0}
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
+                        terms = await resp.json()
             except:
                 raise
             finally:
