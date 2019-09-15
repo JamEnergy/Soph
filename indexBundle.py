@@ -36,7 +36,7 @@ async def ping(request:aiohttp.web.Request):
 async def call(request:aiohttp.web.Request):
     state = request.app["state"]
     payload = await request.json()
-
+    LOGGER("call: payload={0}".format(json.dumps(payload)))
     methodName = payload["method"]
     sid = payload["sid"]
     args = payload.get("args", ())
