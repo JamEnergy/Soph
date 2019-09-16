@@ -77,5 +77,5 @@ class NameManager(object):
         except:
             pass  # probably wasn't a user
 
-        return None
+        return "unknown user"
 
