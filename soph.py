@@ -224,7 +224,7 @@ class Soph:
         task = check_deps()
         fut = asyncio.ensure_future(task)
 
-        self.addressPat = re.compile(r"^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*")
+        self.addressPat = re.compile(r"(^(Ok|So)((,\s*)|(\s+))"+ self.options["name"]+ r"\s*[,-\.:]\s*)|(<@{0}>(\s*))".format(self.client.user.id))
 
         for server in self.client.servers or {}:
             self.serverMap[server.name] = server.id
@@ -263,7 +263,7 @@ class Soph:
                 for alias in aliasMap[m.id]:
                     un[alias] = m.id
 
-        payload = {"method": "answer", "sid":message.server.id, "args": [suffix, un]}
+        payload = {"method": "answer", "sid": message.server.id, "args": [suffix, un]}
 
         async with aiohttp.ClientSession() as session:
             async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
@@ -665,7 +665,7 @@ class Soph:
         
         return response
 
-    async def consumeInternal(self, message, timer=NoTimer()):
+    async def consumeInternal(self, message:discord.Message, timer=NoTimer()):
         async with ScopedStatus(self.client, "with your text data") as status:
             fromUser = message.author.display_name
             self.log (message.content[0:100])
@@ -675,20 +675,21 @@ class Soph:
             if message.channel and hasattr(message.channel ,'server'):
                 server = message.channel.server
 
-            x = await self.dispatch(payload, message, timer=timer, usePrefix = False)
+            x = await self.dispatch(payload, message, timer=timer, usePrefix=False)
             if x:
                 return x
 
+            addressed_to_me = len(payload) < len(message.content) or self.client.user in message.mentions
             if message.channel.type != discord.ChannelType.private:
-                if len(payload) == len(message.content):
+                if not addressed_to_me:
                     return None
-                if message.channel.name == "ch160":
+                if message.channel.name == "ch160": #LOL
                     return None
 
             if not payload:
                 return "What?"
 
-            x = await self.dispatch(payload, message, timer=timer)
+            x = await self.dispatch(payload, message, timer=timer, usePrefix=True)
             if x:
                 return x
 

@@ -54,7 +54,7 @@ async def call(request:aiohttp.web.Request):
 
 if __name__ == "__main__":
     with open("options.json", "r", encoding="utf-8") as f:
-        global_opts = json.loads(f.read(), encoding = "utf-8")
+        global_opts = json.loads(f.read(), encoding="utf-8")
     
     def make(key):
         opts = { "dir": os.path.join("data", str(key), "index"), 
