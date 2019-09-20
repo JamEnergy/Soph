@@ -85,7 +85,7 @@ class PrefixNameSuffixChecker:
         return -1
 
     def help(self):
-        return "{0} <name> {1} <text>".format(self.prefix, self.suffix)
+        return "{0} <name> {1}".format(self.prefix, self.suffix)
 
 
 g_whatSaidPat = re.compile(r"^\s*what did (.*) say about ")
@@ -477,7 +477,13 @@ class Soph:
             results = results[:10]
         if not results:
             return "No one, apparently, {0}".format(fromUser)
-        return "\n".join(["{0}: {1}".format(userIds[v[1]], v[0]) for v in results])
+
+        ret = []
+        for r in results:
+            name = await self.resolveId(r[1], message.server)
+            ret.append("{0}: {1}".format(name, r[0]))
+
+        return "```" + "\n".join(ret) + "```"
 
     async def respondUserTerms(self, prefix, suffix, message, timer=NoTimer()):
         try:
