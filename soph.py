@@ -251,16 +251,14 @@ class Soph:
         self.ready = True
 
     async def testTextEngine(self, prefix, suffix, message, timer=NoTimer()):
-        un = {}
-        aliasMap = utils.SophDefaultDict(lambda x:list())
-        for k,v in self.aliases.items():
-            aliasMap[v].append(k)
+        un = {} # map of name->id
+        aliasMap = self.name_managers.get(message.server).get_alias_map()
 
         if hasattr(message, "server"):
             for m in message.server.members:
                 un[m.display_name] = m.id
                 un[m.name] = m.id
-                for alias in aliasMap[m.id]:
+                for alias in aliasMap.get(m.id, []):
                     un[alias] = m.id
 
         payload = {"method": "answer", "sid": message.server.id, "args": [suffix, un]}
@@ -289,35 +287,23 @@ class Soph:
         left = suffix[0:index].strip()
         right = suffix[index+1:].strip()
 
-        await self.loadAllUsers()
+        name_mgr = self.name_managers.get(message.server)
 
-        if left in self.userNameCache:
-            existingName = left
-            newName = right
-        elif right in self.userNameCache:
-            existingName = right
-            newName = left
-        else:
-            return g_Lann
+        left_id = name_mgr.get_id(left)
+        right_id = name_mgr.get_id(right)
 
-        if newName in self.userNameCache:
-            canonicalName = self.userCache[self.userNameCache[newName]]
-            if canonicalName == newName:
-                newName = existingName
-            return "{0} is already called {1} :/".format(canonicalName, newName)
+        if left_id and not right_id:
+            new_alias = right
+            existing_uid = left_id
+        elif right_id and not left_id:
+            new_alias = left
+            existing_uid = right_id
+        elif left_id and right_id:
+            return "{0} and {1} are already both in use!".format(left, right)
+        else: # neither
+            return "I don't know who either {0} or {1} are".format(left, right)
 
-        self.userNameCache[newName] = self.userNameCache[existingName]
-        self.aliases[newName] = self.userNameCache[existingName]
-
-        aliases = {}
-        if os.path.exists(Soph.aliasPath):
-            with open(Soph.aliasPath) as f:
-                aliases = json.loads(f.read())
-        aliases[newName] = self.userNameCache[newName]
-        with open(Soph.aliasPath, "w") as f:
-            f.write(json.dumps(aliases, indent=True))
-        
-        return "Done ({0} -> {1})".format(newName, existingName)
+        return name_mgr.set_alias(existing_uid, new_alias)
     
     def loadAliases(self):
         # map of names->ids

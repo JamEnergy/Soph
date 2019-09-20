@@ -2,6 +2,7 @@ import discord
 from typing import *
 import os
 import json
+import utils
 
 
 class NameManagerBundle(object):
@@ -29,7 +30,7 @@ class NameManager(object):
         Manages names for a single server
     """
     def __init__(self, client:discord.Client, server:discord.Server):
-        self._aliases = {}
+        self._aliases = {}  # name->uid
         self._uid_to_name = {}  # type:Dict[Str,Str] uid -> desired name
         self._name_to_uid = {}  # type:Dict[Str,Str] name -> uid
         self._client = client  # type:discord.Client
@@ -44,10 +45,16 @@ class NameManager(object):
             self._name_to_uid[member.name] = member.id
 
     def set_alias(self, uid, new_alias):
+        if new_alias in self._name_to_uid:
+            return "{1} is already called {0}".format(new_alias, self._name_to_uid[new_alias])
+
         aliases = self.load_aliases()
-        aliases[new_alias] = uid
+        aliases[new_alias] = uid # map of name->uid
         with open(self._alias_path, "w") as of:
             json.dump(aliases, of, indent=4)
+
+        self._name_to_uid[new_alias] = uid
+        return "Done!"
 
     def load_aliases(self):
         """
@@ -63,6 +70,15 @@ class NameManager(object):
 
     #def get_name(self, uid):
     #    return self._uid_to_name.get(uid, "?")
+
+    def get_id(self, name):
+        return self._name_to_uid.get(name, None)
+
+    def get_alias_map(self): # returns map of uid->list of names
+        ret = utils.SophDefaultDict(lambda x: list())
+        for k, v in self._name_to_uid.items():
+            ret[v].append(k)
+        return ret
 
     async def get_name(self, uid):
         if uid in self._uid_to_name:
