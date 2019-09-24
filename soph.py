@@ -499,7 +499,7 @@ class Soph:
             asyncio.ensure_future( thinking() )
 
             try:
-                payload = {"method": "userTerms", "sid": message.server.id, "args": {uid:name}, "kwargs":{
+                payload = {"method": "userTerms", "sid": message.server.id, "args": [{uid:name}], "kwargs":{
                     "corpusThresh":0, "minScore":0}
                 }
                 async with aiohttp.ClientSession() as session:
