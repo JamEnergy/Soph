@@ -444,24 +444,32 @@ class Index:
 
             return counts
 
-    def getTimes(self, userId):
-        import whoosh.sorting
+    def getTimes(self, userId, time_slice_width_hours=6):
+        import whoosh.sorting # WHAT THE FUCK, JEREMY?
         from datetime import datetime, timedelta
 
         uq = whoosh.query.Term("user", userId)
 
         end = datetime.utcnow()
         end = datetime(end.year, end.month, end.day)
-        gap = timedelta(hours=6)
-        start = end - 180*gap
+        gap = timedelta(hours=time_slice_width_hours)
+        start = end - timedelta(days=30*2)
 
         facet = whoosh.sorting.DateRangeFacet("time", start, end, gap)
         with self.getSearcher() as s:
             r = s.search(uq, groupedby=facet)
 
         g = r.groups()
+        data = [{"r":[k[0].timestamp(), k[1].timestamp()], "c": len(v)} for k, v in g.items() if k and v]
 
-        return g
+        ret = {
+            "data": data,
+            "start_utc": start.timestamp(),
+            "end_utc": end.timestamp(),
+            "gap_hours": time_slice_width_hours
+        }
+
+        return ret
 
         
 

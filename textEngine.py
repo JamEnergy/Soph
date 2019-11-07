@@ -138,6 +138,10 @@ class TextEngine:
         with Timer("userTerms") as t:
             return await self.index.terms_async(usernames, corpusThresh, corpusNorm = True, minScore = minScore, timer = t)
 
+    async def getTimes(self, userId, time_slice_length=24):
+        res = self.index.getTimes(userId, time_slice_length)
+        return res
+
     async def relationships(self, idsMap:dict, uid):
         """ idsMap: dict id -> list [ userNames ]"""
         [

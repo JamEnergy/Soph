@@ -1,4 +1,5 @@
 import wsClient
+import datetime
 from sophLogger import SophLogger as logger
 import random
 import aiohttp
@@ -158,7 +159,8 @@ class Soph:
                 (AlwaysCallback("converts times to UTC"), Soph.respondTimeExt),
                 (AlwaysCallback("reacts to certain greetings"), Soph.respondGreet)           
             ]
-        self.callbacks = [  (StartsWithChecker("who said"), Soph.respondQueryStats),
+        self.callbacks = [  (StartsWithChecker("get time data for"), Soph.respondTimeData),
+                            (StartsWithChecker("who said"), Soph.respondQueryStats),
                             (PrefixNameSuffixChecker("what does", "talk about"), Soph.respondUserTerms),
                             (StartsWithChecker("who mentions"), Soph.respondMentions),
                             (StartsWithChecker("help"), Soph.help),
@@ -418,6 +420,19 @@ class Soph:
         if self.reactor:
             await self.reactor.react(message, self.client)
         return None
+
+    async def respondTimeData(self, prefix, suffix, message, timer=NoTimer()):
+        name_manager = self.name_managers.get(message.server)
+        uid = name_manager.get_id(suffix)
+        payload = {"method": "getTimes", "sid": message.server.id, "args": [uid, 24]}
+        with timer.sub_timer("respondTimeData-stats-callback") as t:
+            async with aiohttp.ClientSession() as session:
+                async with session.post('http://localhost:8888/call', data=json.dumps(payload)) as resp:
+                    results = await resp.json()
+                    data = results["data"]
+                    data = sorted(data, key=lambda x: x["r"][0] if x else 0)
+                    lines = ["{0}: {1}".format(datetime.datetime.fromtimestamp(obj["r"][0]).strftime("%a %b %d"), obj["c"]) for obj in data]
+        return "```Message counts for {0}:\n{1}```".format(suffix, "\n".join(lines))
 
     async def respondQueryStats(self, prefix, suffix, message, timer=NoTimer()):
         with timer.sub_timer("query-stats-callback") as t:

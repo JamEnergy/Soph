@@ -15,7 +15,10 @@ skip = re.compile(r"(^\[\d+:\d+ [aApP][mM]\])|(.*((Today)|(Yesterday)) at \d+:\d
 
 _log = Logger("chatlog.log")
 def log_text(text):
-    _log(text)
+    try:
+        _log(text)
+    except Exception as e:
+        print("Logging error...")
 
 tok = open("token.dat").read()
 
@@ -130,14 +133,16 @@ async def on_ready():
 
     
     
-    while True:        
-        with open("options.json") as f:
-            options = json.loads(f.read())
+    while True:
+        with open("options.json", encoding="utf-8") as f:
+            data = f.read()
+            options = json.loads(data)
 
         baseDir = options.get("indexesBase","data")
 
         for s in client.servers:
             serverDir = os.path.join(baseDir, s.id)
+            os.makedirs(serverDir, exist_ok=True)
             
             svrOpts = None
             for it in options["servers"]:

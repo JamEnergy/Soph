@@ -45,11 +45,14 @@ async def call(request:aiohttp.web.Request):
     idx = state[sid]
     method = getattr(idx, methodName)
     if method:
-        if inspect.iscoroutinefunction(method):
-            ret = await method(*args, **kwargs)
-        else:
-            ret = method(*args, **kwargs)
-        return aiohttp.web.Response(text=json.dumps(ret), status=200, content_type="application/json")
+        try:
+            if inspect.iscoroutinefunction(method):
+                ret = await method(*args, **kwargs)
+            else:
+                ret = method(*args, **kwargs)
+            return aiohttp.web.Response(text=json.dumps(ret), status=200, content_type="application/json")
+        except Exception as e:
+            LOGGER(str(e))
     return aiohttp.web.Response(text=":(", status=500)
 
 if __name__ == "__main__":
