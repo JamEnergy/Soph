@@ -1,4 +1,4 @@
-aiohttp==3.0.5
+aiohttp==3.7.4
 discord.py==0.16.7
 spacy==2.0.5
 markovify==0.5.4
